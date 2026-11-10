@@ -5,6 +5,7 @@
   /* ---------------- 常量 & 状态 ---------------- */
   var STORE_KEY = 'msyq.v2';
   var OLD_STORE_KEY = 'msyq.v1';
+  var rawLocalSnapshot = null; /* 迁移用：file:// 或旧浏览器里的原始存档 */
   var SESSION_KEY = 'msyq.entered';
   var THEME_ORDER = ['pink', 'ice'];
   var NO_TAB_VIEWS = ['characters', 'personas', 'books', 'providers', 'presets', 'stats'];
@@ -184,6 +185,7 @@
       }
     } catch (e) { saved = null; }
     if (!saved || typeof saved !== 'object') return base;
+    try { rawLocalSnapshot = clone(saved); } catch (e) { rawLocalSnapshot = null; }
 
     if (saved.theme === 'pink' || saved.theme === 'ice') base.theme = saved.theme;
     if (saved.overrides) {
@@ -247,9 +249,332 @@
 
   var state = loadState();
 
+  /* ================================================================
+     B 阶段：同源后端（server/）接入
+     通过 http(s) 打开页面时以后端为权威；file:// 打开时保留本地降级，
+     方便离线看样稿。浏览器不再持有明文 API Key。
+     ================================================================ */
+  var API_BASE = '/api';
+  var SERVER_MODE = location.protocol === 'http:' || location.protocol === 'https:';
+  var serverOnline = false;
+  var serverInfo = { mockModel: false, version: '', authRequired: false, devMode: true };
+  var authRequired = false;
+  var devMode = true;
+  var usageSummary = null;
+  var pendingProviderKey = null;
+  var syncTimer = null;
+  var syncFailedNotified = false;
+  var loginBusy = false;
+
+  function serverFetch(path, options) {
+    var opts = options || {};
+    var headers = opts.headers || {};
+    var body = opts.body;
+    if (body !== undefined && !(body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(body);
+    }
+    return fetch(API_BASE + path, {
+      method: opts.method || 'GET',
+      credentials: 'same-origin',
+      headers: headers,
+      body: body
+    }).then(function (res) {
+      var ct = res.headers.get('content-type') || '';
+      var parsing = ct.indexOf('application/json') !== -1
+        ? res.json().catch(function () { return {}; })
+        : res.text().then(function (text) { return { text: text }; });
+      return parsing.then(function (data) {
+        if (!res.ok) {
+          var err = (data && data.error) || {};
+          var e = new Error(err.message || ('请求没成功（' + res.status + '）。'));
+          e.kind = err.kind || 'http';
+          e.status = res.status;
+          e.detail = err.detail || '';
+          throw e;
+        }
+        return data;
+      });
+    }).catch(function (err) {
+      if (err && err.kind) throw err;
+      var e = new Error('连不上服务器：检查后端是否在运行。');
+      e.kind = 'network';
+      throw e;
+    });
+  }
+
+  function serverDownload(path) {
+    return fetch(API_BASE + path, { credentials: 'same-origin' }).then(function (res) {
+      if (!res.ok) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          var err = (data && data.error) || {};
+          var e = new Error(err.message || '导出没成功，稍后再试。');
+          e.kind = err.kind || 'http';
+          throw e;
+        });
+      }
+      return res.blob();
+    });
+  }
+
+  function downloadBlob(filename, blob) {
+    try {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.setTimeout(function () {
+        if (a.parentNode) a.parentNode.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 700);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function apiToast(err) {
+    toast((err && err.message) || '请求没成功，稍后再试。');
+  }
+
+  function serverUpload(path, file, mode) {
+    var form = new FormData();
+    form.append('file', file, file.name || 'upload');
+    if (mode) form.append('mode', mode);
+    return serverFetch(path, { method: 'POST', body: form });
+  }
+
+  /* ---------- 用后端快照覆盖本地状态 ---------- */
+  function applyServerState(snapshot) {
+    if (!snapshot) return;
+    ['characters', 'userPersonas', 'worldBooks', 'providers', 'models', 'promptPresets', 'memories'].forEach(function (key) {
+      if (Array.isArray(snapshot[key])) state[key] = snapshot[key];
+    });
+    if (snapshot.chats && typeof snapshot.chats === 'object' && !Array.isArray(snapshot.chats)) {
+      state.chats = snapshot.chats;
+    }
+    if (snapshot.theme === 'pink' || snapshot.theme === 'ice') state.theme = snapshot.theme;
+    if (snapshot.overrides && typeof snapshot.overrides === 'object') {
+      ['pink', 'ice'].forEach(function (t) {
+        if (snapshot.overrides[t] && typeof snapshot.overrides[t] === 'object') state.overrides[t] = snapshot.overrides[t];
+      });
+    }
+    if (snapshot.settings && typeof snapshot.settings === 'object') {
+      state.settings = Object.assign({}, baseState().settings, snapshot.settings);
+    }
+    if (snapshot.listen && typeof snapshot.listen === 'object') state.listen = snapshot.listen;
+    if (typeof snapshot.nowText === 'string') state.nowText = snapshot.nowText;
+    if (typeof snapshot.backupAt === 'string') state.backupAt = snapshot.backupAt || '';
+    if (typeof snapshot.modelId === 'string') state.modelId = snapshot.modelId;
+    if (typeof snapshot.currentCharacterId === 'string') state.currentCharacterId = snapshot.currentCharacterId;
+    normalizeCollections();
+  }
+
+  function normalizeCollections() {
+    if (!Array.isArray(state.characters)) state.characters = [];
+    if (!Array.isArray(state.userPersonas)) state.userPersonas = [];
+    if (!Array.isArray(state.worldBooks)) state.worldBooks = [];
+    if (!Array.isArray(state.providers)) state.providers = [];
+    if (!Array.isArray(state.models)) state.models = [];
+    if (!Array.isArray(state.promptPresets)) state.promptPresets = [];
+    if (!Array.isArray(state.memories)) state.memories = [];
+    if (!state.chats || typeof state.chats !== 'object' || Array.isArray(state.chats)) state.chats = {};
+    if (!findChar(state.currentCharacterId)) {
+      state.currentCharacterId = state.characters.length ? state.characters[0].id : '';
+    }
+    if (!findModel(state.modelId)) state.modelId = state.models.length ? state.models[0].id : '';
+    if (!state.userPersonas.some(function (p) { return p.is_default; }) && state.userPersonas.length) {
+      state.userPersonas[0].is_default = true;
+    }
+    if (!state.settings) state.settings = baseState().settings;
+    if (!state.settings.defaultPresetId) state.settings.defaultPresetId = 'preset-default';
+    if (!state.overrides) state.overrides = { pink: {}, ice: {} };
+    if (!state.listen) state.listen = { playlist: 0, song: 0 };
+  }
+
+  /* ---------- 整体同步：后端为权威，浏览器只发编辑后的集合 ---------- */
+  function serverSnapshot() {
+    var chats = {};
+    Object.keys(state.chats || {}).forEach(function (cid) {
+      var chat = state.chats[cid] || {};
+      chats[cid] = {
+        personaId: chat.personaId || '',
+        worldBookId: chat.worldBookId || '',
+        presetId: chat.presetId || '',
+        modelId: chat.modelId || '',
+        reasoningLevel: chat.reasoningLevel || '',
+        title: chat.title || '',
+        lastAt: chat.lastAt || ''
+      };
+    });
+    var providers = state.providers.map(function (p) {
+      var copy = clone(p);
+      /* 明文 Key 永远不经过整体同步；新 Key 走 /providers/{id}/key */
+      delete copy.apiKey;
+      delete copy.hasKey;
+      delete copy.keyMasked;
+      return copy;
+    });
+    return {
+      theme: state.theme,
+      overrides: state.overrides,
+      settings: state.settings,
+      listen: state.listen,
+      backupAt: state.backupAt,
+      modelId: state.modelId,
+      currentCharacterId: state.currentCharacterId,
+      characters: state.characters,
+      userPersonas: state.userPersonas,
+      worldBooks: state.worldBooks,
+      providers: providers,
+      models: state.models,
+      promptPresets: state.promptPresets,
+      chats: chats
+    };
+  }
+
+  function pushServerState() {
+    syncTimer = null;
+    if (!serverOnline) return;
+    serverFetch('/state', { method: 'PUT', body: { state: serverSnapshot() } }).catch(function (err) {
+      if (!syncFailedNotified) {
+        syncFailedNotified = true;
+        toast('同步到服务器失败：' + err.message);
+      }
+    });
+  }
+
+  function scheduleServerSync() {
+    if (!serverOnline || !SERVER_MODE) return;
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(pushServerState, 350);
+  }
+
   function save() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* 忽略 */ }
+    scheduleServerSync();
   }
+
+  function refreshFromServer(opts) {
+    if (!serverOnline) return Promise.resolve(false);
+    /* 以服务器快照为准：取消尚未发出的本地整体同步，避免旧快照覆盖刚写入的数据 */
+    if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+    return serverFetch('/bootstrap').then(function (boot) {
+      serverInfo = boot.server || serverInfo;
+      usageSummary = boot.usage || usageSummary;
+      applyServerState(boot.state);
+      if (opts && opts.chat) {
+        var chat = ensureChat(state.currentCharacterId, true);
+        chatMessages = chat ? chat.messages : [];
+      }
+      renderAfterServerRefresh();
+      return true;
+    }).catch(function (err) {
+      toast('刷新失败：' + err.message);
+      return false;
+    });
+  }
+
+  function renderAfterServerRefresh() {
+    applyTheme(state.theme);
+    renderHome();
+    renderMemories();
+    renderMe();
+    renderSettings();
+    renderLibraries();
+    renderChatContext();
+    paintAllAvatars();
+    if (currentView === 'providers') renderProviders();
+    if (currentView === 'presets') renderPresets();
+    if (currentView === 'stats') renderStats();
+    if (currentView === 'chat') { renderChat(); updateChatHeader(); }
+  }
+
+  function refreshUsageSummary() {
+    if (!serverOnline) return Promise.resolve();
+    return serverFetch('/usage/summary').then(function (data) {
+      usageSummary = data;
+      renderMe();
+      renderHome();
+    }).catch(function () { /* 忽略 */ });
+  }
+
+  /* ---------- 登录 ---------- */
+  function showLogin(message) {
+    var layer = $('#loginLayer');
+    if (!layer) { toast(message || '需要登录。'); return; }
+    layer.classList.add('is-open');
+    layer.setAttribute('aria-hidden', 'false');
+    var sub = $('#loginSub');
+    if (sub) sub.textContent = message || '这台服务设置了登录密码，先输入再进去。';
+    var note = $('#loginNote');
+    if (note) note.textContent = '密码设置在后端的 APP_PASSWORD 里；浏览器只保存一个 HttpOnly 的会话 cookie。';
+    setTimeout(function () {
+      var input = $('#loginPass');
+      if (input) { try { input.focus({ preventScroll: true }); } catch (e) { /* 忽略 */ } }
+    }, 80);
+  }
+
+  function hideLogin() {
+    var layer = $('#loginLayer');
+    if (!layer) return;
+    layer.classList.remove('is-open');
+    layer.setAttribute('aria-hidden', 'true');
+  }
+
+  function submitLogin() {
+    if (!SERVER_MODE) return;
+    var input = $('#loginPass');
+    var btn = $('#loginBtn');
+    var password = input ? input.value : '';
+    if (!password) { showLogin('先输入密码。'); return; }
+    if (loginBusy) return;
+    loginBusy = true;
+    if (btn) btn.textContent = '正在进入…';
+    serverFetch('/auth/login', { method: 'POST', body: { password: password } }).then(function () {
+      if (input) input.value = '';
+      hideLogin();
+      return loadServerApp();
+    }).catch(function (err) {
+      showLogin(err.message || '密码不对，再试一次。');
+    }).then(function () {
+      loginBusy = false;
+      if (btn) btn.textContent = '进入';
+    });
+  }
+
+  /* ---------- 从浏览器迁移（可重复、幂等） ---------- */
+  function offerMigration() {
+    if (!serverOnline || !rawLocalSnapshot) return;
+    try { if (localStorage.getItem('msyq.migrated') === '1') return; } catch (e) { return; }
+    if (!rawLocalSnapshot || (!rawLocalSnapshot.characters && !rawLocalSnapshot.chats && !rawLocalSnapshot.memories)) return;
+    openSheet('migrateOffer');
+  }
+
+  function runMigration(includeKeys) {
+    if (!serverOnline || !rawLocalSnapshot) return;
+    var payload = clone(rawLocalSnapshot);
+    if (!includeKeys) {
+      (payload.providers || []).forEach(function (p) { p.apiKey = ''; });
+    }
+    serverFetch('/migrate/local', { method: 'POST', body: { state: payload, includeApiKeys: !!includeKeys } }).then(function (result) {
+      try { localStorage.setItem('msyq.migrated', '1'); } catch (e) { /* 忽略 */ }
+      /* 迁移后清空浏览器里的明文 Key */
+      try {
+        var stored = localStorage.getItem(STORE_KEY);
+        if (stored) {
+          var parsed = JSON.parse(stored);
+          (parsed.providers || []).forEach(function (p) { p.apiKey = ''; });
+          localStorage.setItem(STORE_KEY, JSON.stringify(parsed));
+        }
+      } catch (e) { /* 忽略 */ }
+      closeSheet();
+      var imported = result.imported || {};
+      toast('迁移完成：角色 ' + (imported.characters || 0) + ' 位、聊天 ' + (imported.chats || 0) + ' 场、记忆 ' + (imported.memories || 0) + ' 条。');
+      refreshFromServer({ chat: true });
+    }).catch(apiToast);
+  }
+
 
 
   /* ================================================================
@@ -368,6 +693,9 @@
 
   /* ---------- 聊天：每个角色一场（最近一场） ---------- */
   function chatInitMessages(char) {
+    /* 接后端时消息由服务器维护（开场白会在 ensure 时写入），
+       不再把 A 阶段的假对话塞进真实聊天里。离线模式保留演示对话。 */
+    if (serverOnline) return [];
     if (char.id === 'miao') return clone(DATA.chat);
     if (char.first_mes) return [{ role: 'ai', text: char.first_mes, time: hm(new Date()) }];
     return [];
@@ -387,6 +715,20 @@
         messages: msgs,
         lastAt: msgs.length ? new Date().toISOString() : ''
       };
+      if (serverOnline) {
+        serverFetch('/chats/' + encodeURIComponent(charId) + '/ensure', { method: 'POST' }).then(function (data) {
+          var chat = state.chats[charId];
+          if (!chat || !data || !data.chat) return;
+          if (!chat.messages || !chat.messages.length) {
+            chat.messages = data.chat.messages || [];
+            chat.lastAt = data.chat.lastAt || chat.lastAt;
+            if (state.currentCharacterId === charId) {
+              chatMessages = chat.messages;
+              renderChat();
+            }
+          }
+        }).catch(function () { /* 下次发消息时后端会再建 */ });
+      }
       save();
     }
     return state.chats[charId];
@@ -591,6 +933,7 @@
         '<div class="entity-hero__actions">' +
           '<button class="mini-btn" type="button" data-char-edit="' + esc(c.id) + '">编辑</button>' +
           '<button class="mini-btn" type="button" data-char-export="' + esc(c.id) + '">导出 JSON</button>' +
+          '<button class="mini-btn" type="button" data-char-export-png="' + esc(c.id) + '">导出 PNG</button>' +
           '<button class="mini-btn mini-btn--danger" type="button" data-char-del="' + esc(c.id) + '">删除</button>' +
         '</div></article>' +
       fieldBlockHtml('她是谁', c.description) +
@@ -606,7 +949,7 @@
         '<p class="bind-row__note">一场聊天 = 一个角色 + 一套用户设定；世界书可全局一本、她一本、这场一本。</p>' +
       '</article>';
     if (extras) html += '<p class="lib-hint">额外资料 ' + extras + ' 项已原样收好，v1 不展开。</p>';
-    html += '<p class="lib-hint">导出为 JSON（v2）。PNG 角色卡导出稍后接后端。</p>';
+    html += '<p class="lib-hint">JSON / PNG 角色卡都由后端解析与写出，PNG 用 tEXt 的 chara 块（和酒馆一致）。</p>';
     html += '<div class="lib-foot"><button class="wide-btn" type="button" data-char-start="' + esc(c.id) + '">' +
       (exists ? '回到和她的最近一场' : '用她开始聊') + '</button></div>';
     box.innerHTML = html;
@@ -794,17 +1137,34 @@
 
   function wallUrl(key) { return 'url(' + WALLPAPERS[currentWp(key)] + ')'; }
 
+  /* 壁纸单独一层：这一层可以加饱和 / 主题色罩，让壁纸的颜色和形状透出来；
+     玻璃卡片的 backdrop-filter 采样的就是这一层，文字和布局不受影响。 */
+  function wallpaperLayer(el) {
+    var layer = el.querySelector('.view__wp');
+    if (!layer) {
+      layer = document.createElement('div');
+      layer.className = 'view__wp';
+      layer.setAttribute('aria-hidden', 'true');
+      el.insertBefore(layer, el.firstChild);
+    }
+    return layer;
+  }
+
   /* 只给当前页挂壁纸；其余页只记 data-wp，避免一次解码多张大图 */
   function activateViewWallpaper(view) {
     DATA.pages.forEach(function (p) {
       var el = $('.view[data-view="' + p.key + '"]');
       if (!el) return;
-      el.setAttribute('data-wp', currentWp(p.key));
+      var wp = currentWp(p.key);
+      el.setAttribute('data-wp', wp);
+      var layer = wallpaperLayer(el);
       if (p.key === view) {
-        el.style.backgroundImage = wallUrl(p.key);
+        /* C2：壁纸保持原样清晰（不叠雾、不模糊），只让 CSS 层做轻提亮 / 轻降对比 */
+        layer.style.backgroundImage = wallUrl(p.key);
       } else {
-        el.style.backgroundImage = '';
+        layer.style.backgroundImage = '';
       }
+      el.style.backgroundImage = '';
     });
   }
 
@@ -878,7 +1238,7 @@
     if (view === 'home') startHomeClock(); else stopHomeClock();
     if (view === 'home') renderHome();
     if (view === 'chat') scrollChatBottom(false);
-    if (view === 'memory') renderMemories();
+    if (view === 'memory') { renderMemories(); refreshMemoriesQuiet(); }
     if (view === 'me') renderMe();
     if (view === 'listen') renderListen();
     if (view === 'settings') renderSettings();
@@ -1000,26 +1360,129 @@
     renderChatContext();
   }
 
-  function sendChat() {
-    var input = $('#chatInput');
-    var text = input ? input.value.trim() : '';
-    if (!text) { if (input) input.focus(); return; }
-    input.value = '';
-    appendChat({ role: 'me', text: text, time: hm(new Date()) });
+  var chatBusy = false;
 
+  /* ---------- 流式回复：读 SSE，逐段更新气泡 ---------- */
+  function consumeSse(response, handlers) {
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder('utf-8');
+    var buffer = '';
+    function dispatch(block) {
+      var lines = block.split('\n');
+      var event = 'message';
+      var data = '';
+      lines.forEach(function (line) {
+        if (line.indexOf('event:') === 0) event = line.slice(6).trim();
+        else if (line.indexOf('data:') === 0) data += line.slice(5).trim();
+      });
+      if (!data) return;
+      var payload;
+      try { payload = JSON.parse(data); } catch (e) { return; }
+      if (handlers[event]) handlers[event](payload);
+    }
+    function pump() {
+      return reader.read().then(function (result) {
+        if (result.done) {
+          if (buffer.trim()) dispatch(buffer);
+          return;
+        }
+        buffer += decoder.decode(result.value, { stream: true });
+        var index;
+        while ((index = buffer.indexOf('\n\n')) !== -1) {
+          var block = buffer.slice(0, index);
+          buffer = buffer.slice(index + 2);
+          dispatch(block);
+        }
+        return pump();
+      });
+    }
+    return pump();
+  }
+
+  function beginStreamBubble() {
+    var typing = '<div class="msg msg--ai" id="streamMsg">' +
+      avatarHTML(currentChar(), 'avatar avatar--ai msg__avatar') +
+      '<div class="msg__body"><p class="msg__name"><span>' + esc(charName()) + '</span><span class="msg__time">' + hm(new Date()) + '</span></p>' +
+      '<div class="bubble bubble--ai" id="streamBubble"><span class="think-pill" aria-label="思考中">思考中<i></i><i></i><i></i></span></div>' +
+      '<p class="fallback-note" id="streamFallback" hidden></p>' +
+      '<p class="usage" id="streamUsage" hidden></p>' +
+      '</div></div>';
+    $('#chatList').insertAdjacentHTML('beforeend', typing);
+    scrollChatBottom(true);
+  }
+
+  function updateStreamBubble(text) {
+    var box = $('#streamBubble');
+    if (!box) return;
+    box.innerHTML = paragraphs(text);
+    scrollChatBottom(false);
+  }
+
+  function setStreamFallback(note) {
+    var el = $('#streamFallback');
+    if (!el || !note) return;
+    el.textContent = note;
+    el.removeAttribute('hidden');
+  }
+
+  function setStreamUsage(usage, ms) {
+    var el = $('#streamUsage');
+    if (!el || !usage) return;
+    el.textContent = renderUsage(usage, ms);
+    el.removeAttribute('hidden');
+  }
+
+  function appendErrorBubble(text) {
+    var msg = { role: 'ai', text: text, time: hm(new Date()), error: true, uiOnly: true };
+    chatMessages.push(msg);
+    var html = '<div class="msg msg--ai">' +
+      avatarHTML(currentChar(), 'avatar avatar--ai msg__avatar') +
+      '<div class="msg__body"><p class="msg__name"><span>' + esc(charName()) + '</span><span class="msg__time">' + esc(msg.time) + '</span></p>' +
+      '<div class="bubble bubble--ai"><p>' + esc(text) + '</p></div>' +
+      '<p class="fallback-note">这次没有回复成功；上面是中文原因，不是原始报错。</p></div></div>';
+    $('#chatList').insertAdjacentHTML('beforeend', html);
+    scrollChatBottom(true);
+  }
+
+  function finishStream(done, streamText, errInfo) {
+    var holder = $('#streamMsg');
+    var failed = errInfo || (done && done.error);
+    if (failed) {
+      if (holder) holder.remove();
+      var message = (errInfo && errInfo.message) || (done.error && done.error.message) || '这次没成功，稍后再试。';
+      appendErrorBubble(message);
+      toast(message);
+      return;
+    }
+    var finalMsg = done && done.message;
+    if (!finalMsg) {
+      finalMsg = {
+        role: 'ai',
+        text: streamText,
+        time: hm(new Date()),
+        usage: done && done.usage,
+        ms: done && done.durationMs
+      };
+      if (done && done.fallback) finalMsg.fallback = done.fallback;
+    }
+    if (holder) holder.remove();
+    chatMessages.push(finalMsg);
+    $('#chatList').insertAdjacentHTML('beforeend', renderMessage(finalMsg));
+    scrollChatBottom(true);
+    persistChat();
+    if (done && done.remembered) toast('记好了：' + done.remembered.title);
+    if (done && done.fallback) toast(done.fallback);
+    window.setTimeout(function () { refreshMemoriesQuiet(); }, 900);
+  }
+
+  /* file:// 或后端断线时的本地演示回复（明确标成演示） */
+  function localFakeReply() {
     var typing = '<div class="msg msg--ai" id="typingMsg">' +
       avatarHTML(currentChar(), 'avatar avatar--ai msg__avatar') +
       '<div class="msg__body"><p class="msg__name"><span>' + esc(charName()) + '</span></p>' +
       '<div class="bubble bubble--ai bubble--typing"><span class="think-pill" aria-label="思考中">思考中<i></i><i></i><i></i></span></div></div></div>';
     $('#chatList').insertAdjacentHTML('beforeend', typing);
     scrollChatBottom(true);
-
-    var model = currentModel();
-    var level = chatReasoningLevel();
-    var built = buildReasoningParams(model, level);
-    var provider = model ? findProvider(model.providerId) : null;
-    var useReasoning = !!(built && built.supported && built.params && level && level !== 'off');
-
     if (replyTimer) clearTimeout(replyTimer);
     replyTimer = setTimeout(function () {
       var old = $('#typingMsg');
@@ -1030,31 +1493,96 @@
       sessionUsage.prompt += fake.usage.prompt_tokens;
       sessionUsage.completion += fake.usage.completion_tokens;
       sessionUsage.total += fake.usage.total_tokens;
-      var msg = { role: 'ai', text: reply, time: hm(new Date()), usage: fake.usage, ms: fake.ms };
-      var retried = false;
-      /* 样稿演示：这家会在收到思考参数时返回 400，自动去掉参数重试一次 */
-      if (useReasoning && provider && provider.advanced && provider.advanced.demo400) {
-        retried = true;
-        useReasoning = false;
-        msg.fallback = '这家不支持调思考深度，已按默认回复。';
-        toast('思考参数被拒绝了，已自动去掉重试。');
-      }
-      if (useReasoning && provider && provider.advanced && provider.advanced.returnThinking !== false) {
-        msg.thinking = {
-          sec: 2 + (reply.length % 4),
-          text: '先看她这句话里的情绪，再把要接的部分放在前面。\n不要追问，留一点空白。\n语气放轻，句子短一点。'
-        };
-      }
+      var msg = { role: 'ai', text: reply, time: hm(new Date()), usage: fake.usage, ms: fake.ms, fallback: '离线演示回复：没有连上后端，这条不是真实模型生成的。' };
       appendChat(msg);
-      window.__a2lastReasoning = {
-        modelId: model ? model.id : '',
-        level: level,
-        mode: model && model.reasoning ? model.reasoning.mode : 'none',
-        params: built ? built.params : null,
-        retried: retried,
-        fallbackNote: msg.fallback || ''
-      };
-    }, 1150);
+    }, 900);
+  }
+
+  function providerNeedsKeyMessage() {
+    return '先到「我的 → 模型与提供商」里填写 API Key，再发消息。';
+  }
+
+  function sendChat() {
+    var input = $('#chatInput');
+    var text = input ? input.value.trim() : '';
+    if (!text) { if (input) input.focus(); return; }
+    if (chatBusy) return;
+    input.value = '';
+    appendChat({ role: 'me', text: text, time: hm(new Date()) });
+
+    if (!SERVER_MODE || !serverOnline) { localFakeReply(); return; }
+
+    var char = currentChar();
+    if (!char) { appendErrorBubble('还没有角色：先到角色库新建或导入一位。'); return; }
+    var model = currentModel();
+    var provider = model ? providerOf(model) : null;
+    if (!model) {
+      appendErrorBubble('还没有可用的模型：先在「模型与提供商」里添加一家并选一个模型。');
+      return;
+    }
+    if (!serverInfo.mockModel && provider && !providerHasKey(provider)) {
+      appendErrorBubble(providerNeedsKeyMessage());
+      toast('还没有填 API Key。');
+      return;
+    }
+    var chat = ensureChat(char.id);
+    if (chat) {
+      chat.modelId = state.modelId || chat.modelId;
+      chat.reasoningLevel = chatReasoningLevel();
+      save();
+    }
+    chatBusy = true;
+    beginStreamBubble();
+    var streamText = '';
+    var errInfo = null;
+    var doneHandled = false;
+    fetch(API_BASE + '/chats/' + encodeURIComponent(char.id) + '/messages', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text, modelId: state.modelId, reasoningLevel: chatReasoningLevel() })
+    }).then(function (res) {
+      if (!res.ok) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          var e = (data && data.error) || {};
+          var err = new Error(e.message || '这次没成功，稍后再试。');
+          err.kind = e.kind || 'http';
+          throw err;
+        });
+      }
+      if (!res.body || !res.body.getReader) {
+        throw new Error('这个浏览器不支持流式读取，换一个浏览器再试。');
+      }
+      return consumeSse(res, {
+        fallback: function (data) {
+          setStreamFallback(data.message || '');
+          toast(data.message || '');
+        },
+        delta: function (data) {
+          streamText += (data.text || '');
+          updateStreamBubble(streamText);
+        },
+        thinking: function () { /* 思考增量在 done 后折叠显示 */ },
+        usage: function (data) {
+          setStreamUsage(data.usage, 0);
+        },
+        error: function (data) { errInfo = data; },
+        done: function (data) {
+          doneHandled = true;
+          finishStream(data, streamText, errInfo);
+        }
+      });
+    }).catch(function (err) {
+      if (!doneHandled) {
+        var holder = $('#streamMsg');
+        if (holder) holder.remove();
+        appendErrorBubble(err.message || '这次没成功，稍后再试。');
+        toast(err.message || '这次没成功，稍后再试。');
+      }
+    }).then(function () {
+      chatBusy = false;
+      refreshUsageSummary();
+    });
   }
 
   /* ---------------- 记忆 ---------------- */
@@ -1138,6 +1666,34 @@
   function currentPlaylist() { return DATA.playlists[listen.playlist]; }
   function currentSong() { return currentPlaylist().songs[listen.song]; }
 
+  /* 网易云专辑封面：coverUrl 是 picUrl 原地址，显示时按尺寸加 ?param=WxH，
+     由手机直接从网易云图片服务器加载；失败时退回主题同色素面唱片。 */
+  function coverUrl(song, size) {
+    if (!song || !song.coverUrl) return '';
+    var px = size || 300;
+    return song.coverUrl + '?param=' + px + 'y' + px;
+  }
+  function setCoverImg(el, song, size) {
+    if (!el) return;
+    var url = coverUrl(song, size);
+    if (!url) { el.classList.add('is-missing'); el.removeAttribute('src'); return; }
+    el.onerror = function () {
+      /* 网络抖动时先重试一次，再退回主题同色素面；不出现破图标 */
+      if (!el.dataset.retry) { el.dataset.retry = '1'; el.src = url + '&r=1'; return; }
+      el.onerror = null;
+      el.classList.add('is-missing');
+      el.removeAttribute('src');
+    };
+    el.classList.remove('is-missing');
+    if (el.getAttribute('src') !== url) el.src = url;
+  }
+  function coverThumb(song, size) {
+    var url = coverUrl(song, size || 120);
+    if (!url) return '<span class="song-row__cover" aria-hidden="true"></span>';
+    /* 列表封面直接加载（120px 小图），失败先重试一次，仍失败就去掉 img 露出素色小方块 */
+    return '<span class="song-row__cover" aria-hidden="true"><img src="' + url + '" alt="" decoding="async" referrerpolicy="no-referrer" onerror="if(!this.dataset.retry){this.dataset.retry=1;this.src=this.src}else{this.remove()}"></span>';
+  }
+
   function renderListen() {
     var song = currentSong();
     if (!song) return;
@@ -1150,6 +1706,9 @@
     if (trackEl) trackEl.textContent = song.title;
     var artistEl = $('#homeArtist');
     if (artistEl) artistEl.textContent = song.artist;
+    setCoverImg($('#recordCover'), song, 300);
+    setCoverImg($('#homeDiscCover'), song, 120);
+    setCoverImg($('#trackCover'), song, 300);
     renderInlinePlaylist();
     updateProgressUi();
     updatePlayUi();
@@ -1164,6 +1723,7 @@
       var current = si === listen.song;
       return '<button class="song-row' + (current ? ' is-current' : '') + '" type="button" data-song="' + listen.playlist + ':' + si + '"' + (current ? ' aria-current="true"' : '') + '>' +
         '<span class="song-row__no">' + (si + 1) + '</span>' +
+        coverThumb(s, 120) +
         '<span class="song-row__main"><span class="song-row__title">' + esc(s.title) + '</span><span class="song-row__artist">' + esc(s.artist) + '</span></span>' +
         (current ? '<span class="song-row__playing" aria-hidden="true"><i></i><i></i><i></i></span>' : '') +
         '<span class="song-row__dur">' + formatDur(s.dur) + '</span>' +
@@ -1276,10 +1836,11 @@
   function renderTokenBars() {
     var box = $('#tokenBars');
     if (!box) return;
-    var bars = DATA.tokens.bars;
-    var max = Math.max.apply(null, bars);
+    var bars = (serverOnline && usageSummary && usageSummary.bars && usageSummary.bars.length) ? usageSummary.bars : DATA.tokens.bars;
+    var labels = (serverOnline && usageSummary && usageSummary.barLabels && usageSummary.barLabels.length) ? usageSummary.barLabels : DATA.tokens.barLabels;
+    var max = Math.max.apply(null, bars) || 1;
     box.innerHTML = bars.map(function (v, i) {
-      return '<span class="bar"><i style="height:' + Math.round(v / max * 100) + '%"></i><span>' + DATA.tokens.barLabels[i] + '</span></span>';
+      return '<span class="bar"><i style="height:' + Math.round(v / max * 100) + '%"></i><span>' + esc(labels[i] || '') + '</span></span>';
     }).join('');
   }
 
@@ -1367,10 +1928,49 @@
       provSub.textContent = state.providers.length + ' 个提供商 · 当前 ' + (cm ? cm.name : '未选择');
     }
     var tt = $('#tokenToday');
-    if (tt) tt.textContent = fmtNum(DATA.tokens.today);
     var tm = $('#tokenMonth');
-    if (tm) tm.textContent = fmtNum(DATA.tokens.month);
+    if (serverOnline && usageSummary) {
+      if (tt) tt.textContent = fmtNum(usageSummary.today || 0);
+      if (tm) tm.textContent = fmtNum(usageSummary.month || 0);
+    } else {
+      if (tt) tt.textContent = fmtNum(DATA.tokens.today);
+      if (tm) tm.textContent = fmtNum(DATA.tokens.month);
+    }
     renderTokenBars();
+    updateServerNote();
+  }
+
+  function updateServerNote() {
+    var modeNote = $('#serverNote');
+    if (!modeNote) return;
+    var lines = [];
+    if (!SERVER_MODE) {
+      lines.push('离线模式：用 file:// 直接打开，数据只在这台浏览器里，回复是演示内容。');
+    } else if (!serverOnline) {
+      lines.push('连不上本机后端：暂时用浏览器缓存，改动不会保存到服务器。');
+    } else {
+      lines.push(devMode ? '开发模式：未设置登录密码（APP_PASSWORD）。只应在自己的电脑上这样用。' : '已启用登录密码（APP_PASSWORD）。');
+      if (serverInfo.mockModel) lines.push('演示模型模式（MSYQ_MOCK=1）：回复由本机生成，不会请求外部接口。');
+      if (serverInfo.version) lines.push('后端 v' + serverInfo.version + ' · 同源托管，浏览器不直接拿 API Key。');
+    }
+    modeNote.textContent = lines.join(' ');
+    var existingLogout = $('#logoutBtn');
+    if (SERVER_MODE && serverOnline && authRequired) {
+      if (!existingLogout) {
+        var logout = document.createElement('button');
+        logout.id = 'logoutBtn';
+        logout.type = 'button';
+        logout.className = 'text-btn';
+        logout.textContent = '退出登录';
+        logout.style.marginTop = '8px';
+        logout.addEventListener('click', function () {
+          serverFetch('/auth/logout', { method: 'POST' }).then(function () { location.reload(); }).catch(apiToast);
+        });
+        if (modeNote.parentNode) modeNote.parentNode.insertBefore(logout, modeNote.nextSibling);
+      }
+    } else if (existingLogout) {
+      existingLogout.remove();
+    }
   }
 
   function renderSettings() {
@@ -1380,6 +1980,7 @@
     s.setAttribute('aria-checked', String(!!state.settings.splashAlways));
     $('#startDate').value = state.settings.startDate;
     $('#settingsThemeValue').textContent = themeLabel(state.theme);
+    updateServerNote();
   }
 
   function backupNow() {
@@ -1498,7 +2099,7 @@
       title: '编辑此刻',
       body: '<label class="field-label" for="nowInput">现在在做什么</label>' +
         '<textarea class="field" id="nowInput" style="min-height:120px">' + esc(state.nowText) + '</textarea>' +
-        '<p class="sheet-note">这句话只留在这台手机里，不同步。</p>',
+        '<p class="sheet-note">这句话会保存到服务器，下次打开还在；它每次都会进入提示词。</p>',
       foot: '<button class="btn" type="button" data-close>取消</button><button class="btn btn--primary" type="button" data-save-now>保存</button>'
     };
   };
@@ -1541,12 +2142,47 @@
     return { title: '已遗忘', body: body };
   };
 
+  SHEETS.memoryNew = function () {
+    var cats = (DATA.memoryCats || ['全部', '关于我', '我们', '喜好', '日常', '约定']).filter(function (c) { return c !== '全部'; });
+    return {
+      title: '新增一条记忆',
+      body: '<label class="field-label" for="memNewTitle">标题</label>' +
+        '<input class="field field--title" id="memNewTitle" type="text" placeholder="例如：睡前半杯温水">' +
+        '<label class="field-label" for="memNewBody">正文</label>' +
+        '<textarea class="field" id="memNewBody" style="min-height:110px" placeholder="只写需要长期记住的那件事"></textarea>' +
+        '<label class="field-label" for="memNewCat">分类</label>' +
+        '<select class="field" id="memNewCat">' + cats.map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('') + '</select>' +
+        '<label class="field-label" for="memNewImportance">重要度（1–10）</label>' +
+        '<input class="field" id="memNewImportance" type="number" inputmode="numeric" min="1" max="10" value="6">' +
+        '<p class="sheet-note">写进「记忆」页的笔记；钉住或者重要度高时会更常进入提示词。</p>',
+      foot: '<button class="btn" type="button" data-close>取消</button>' +
+        '<button class="btn btn--primary" type="button" data-action="create-memory">记下来</button>'
+    };
+  };
+
+  SHEETS.migrateOffer = function () {
+    var snap = rawLocalSnapshot || {};
+    var providerCount = (snap.providers || []).filter(function (p) { return p.apiKey; }).length;
+    return {
+      title: '把浏览器里的数据交给服务器？',
+      body: '<p class="sheet-note" style="text-align:left;font-size:11.5px">这台浏览器里还留着 A / A2 阶段的本地存档（角色 ' + ((snap.characters || []).length) + ' 位、聊天 ' + Object.keys(snap.chats || {}).length + ' 场、记忆 ' + ((snap.memories || []).length) + ' 条）。可以一次性迁移到本机后端，之后以服务器为准。</p>' +
+        '<div class="toggle-row" style="margin-top:6px"><div class="toggle-row__main"><span class="toggle-row__label">连 API Key 一起上传</span><span class="toggle-row__sub">服务器会加密保存；不上传也可以，之后手动填</span></div>' +
+        '<button class="switch" id="migrateKeySwitch" type="button" role="switch" aria-checked="false"><span></span></button></div>' +
+        '<p class="sheet-note">迁移可以重复执行：按 id 去重，不会重复写入。完成后浏览器里的明文 Key 会被清空。</p>' +
+        (providerCount ? '<div class="a2-banner a2-banner--warn"><span>浏览器里有 ' + providerCount + ' 个提供商的 Key，建议勾选一起上传后清掉本地明文。</span></div>' : ''),
+      foot: '<button class="btn" type="button" data-migrate="skip">以后再说</button>' +
+        '<button class="btn" type="button" data-migrate="plain">只迁移数据</button>' +
+        '<button class="btn btn--primary" type="button" data-migrate="keys">连 Key 一起迁移</button>'
+    };
+  };
+
   SHEETS.playlist = function () {
     var body = DATA.playlists.map(function (pl, pi) {
       var songs = pl.songs.map(function (s, si) {
         var current = pi === listen.playlist && si === listen.song;
         return '<button class="song-row' + (current ? ' is-current' : '') + '" type="button" data-song="' + pi + ':' + si + '"' + (current ? ' aria-current="true"' : '') + '>' +
           '<span class="song-row__no">' + (si + 1) + '</span>' +
+          coverThumb(s, 120) +
           '<span class="song-row__main"><span class="song-row__title">' + esc(s.title) + '</span><span class="song-row__artist">' + esc(s.artist) + '</span></span>' +
           (current ? '<span class="song-row__playing" aria-hidden="true"><i></i><i></i><i></i></span>' : '') +
           '<span class="song-row__dur">' + formatDur(s.dur) + '</span>' +
@@ -1557,7 +2193,7 @@
     }).join('');
     return {
       title: '网易云歌单',
-      body: body + '<p class="sheet-note">歌单是假的，不会真的播放声音。</p>'
+      body: body + '<p class="sheet-note">封面来自网易云，按歌曲 id 直接加载；这一轮还不播放声音。</p>'
     };
   };
 
@@ -2120,6 +2756,13 @@
   function handleCharFile(file) {
     if (!file) return;
     if (file.size > 8 * 1024 * 1024) { toast('文件打不开，换一份再试试。'); return; }
+    if (SERVER_MODE && serverOnline) {
+      serverUpload('/characters/import', file, 'auto').then(function (data) {
+        toast((data && data.note) || '角色卡已导入。');
+        return refreshFromServer();
+      }).catch(apiToast);
+      return;
+    }
     var isPng = /\.png$/i.test(file.name || '') || file.type === 'image/png';
     if (isPng) {
       readFileBuffer(file).then(function (buf) {
@@ -2207,6 +2850,17 @@
   function handleBookFile(file) {
     if (!file) return;
     if (file.size > 8 * 1024 * 1024) { toast('文件打不开，换一份再试试。'); return; }
+    if (SERVER_MODE && serverOnline) {
+      readFileText(file).then(function (text) {
+        var raw = tryParseJson(text);
+        if (!raw) { toast('这不是一份能读的世界书文件。'); return; }
+        serverFetch('/worldbooks/import', { method: 'POST', body: { payload: raw } }).then(function (data) {
+          toast((data && data.note) || '世界书已导入。');
+          return refreshFromServer();
+        }).catch(apiToast);
+      }).catch(function () { toast('文件打不开，换一份再试试。'); });
+      return;
+    }
     readFileText(file).then(function (text) {
       var raw = tryParseJson(text);
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { toast('这不是一份能读的世界书文件。'); return; }
@@ -2261,6 +2915,17 @@
   /* 用户设定整包 JSON（也认酒馆备份的 personas / persona_descriptions） */
   function handlePersonaFile(file) {
     if (!file) return;
+    if (SERVER_MODE && serverOnline) {
+      readFileText(file).then(function (text) {
+        var raw = tryParseJson(text);
+        if (!raw || typeof raw !== 'object') { toast('这不是一份能读的用户设定文件。'); return; }
+        serverFetch('/personas/import', { method: 'POST', body: { payload: raw } }).then(function (data) {
+          toast((data && data.message) || '用户设定已导入。');
+          return refreshFromServer();
+        }).catch(apiToast);
+      }).catch(function () { toast('文件打不开，换一份再试试。'); });
+      return;
+    }
     readFileText(file).then(function (text) {
       var raw = tryParseJson(text);
       if (!raw || typeof raw !== 'object') { toast('这不是一份能读的用户设定文件。'); return; }
@@ -2347,15 +3012,29 @@
     card.tags = [];
     return card;
   }
-  function exportCharacter(id) {
+  function exportCharacter(id, format) {
     var c = findChar(id);
     if (!c) return;
+    format = format || 'json';
+    if (SERVER_MODE && serverOnline) {
+      serverDownload('/characters/' + encodeURIComponent(id) + '/export?format=' + format).then(function (blob) {
+        var filename = c.name + (format === 'png' ? '.png' : '.json');
+        toast(downloadBlob(filename, blob) ? ('已导出「' + c.name + '」的 ' + format.toUpperCase() + '。') : '导出没成功，稍后再试。');
+      }).catch(apiToast);
+      return;
+    }
     var ok = downloadText(c.name + '.json', JSON.stringify(buildV2Character(c), null, 2));
-    toast(ok ? '已导出「' + c.name + '」的 JSON（v2）。PNG 导出稍后接后端。' : '导出没成功，稍后再试。');
+    toast(ok ? '已导出「' + c.name + '」的 JSON（v2）。PNG 导出需要连上服务器。' : '导出没成功，稍后再试。');
   }
   function exportBook(id) {
     var b = findBook(id);
     if (!b) return;
+    if (SERVER_MODE && serverOnline) {
+      serverDownload('/worldbooks/' + encodeURIComponent(id) + '/export').then(function (blob) {
+        toast(downloadBlob(b.name + '.json', blob) ? '已导出《' + b.name + '》。' : '导出没成功，稍后再试。');
+      }).catch(apiToast);
+      return;
+    }
     var tavern = { name: b.name, entries: {}, extensions: {} };
     (b.entries || []).forEach(function (e, i) {
       tavern.entries[String(i)] = {
@@ -2374,6 +3053,12 @@
     toast(downloadText(b.name + '.json', JSON.stringify(tavern, null, 2)) ? '已导出《' + b.name + '》。' : '导出没成功，稍后再试。');
   }
   function exportPersonas() {
+    if (SERVER_MODE && serverOnline) {
+      serverDownload('/personas/export').then(function (blob) {
+        toast(downloadBlob('缪诗鸳杞-用户设定.json', blob) ? '已导出全部用户设定。' : '导出没成功，稍后再试。');
+      }).catch(apiToast);
+      return;
+    }
     var personas = {};
     var descs = {};
     state.userPersonas.forEach(function (p) {
@@ -2581,6 +3266,58 @@
   }
 
   /* ---------------- 记忆操作 ---------------- */
+  function refreshMemoriesQuiet() {
+    if (!serverOnline) return Promise.resolve(false);
+    return serverFetch('/memories?includeForgotten=1').then(function (data) {
+      if (Array.isArray(data.memories)) state.memories = data.memories;
+      if (data.now && typeof data.now.body === 'string') state.nowText = data.now.body;
+      renderMemories();
+      return true;
+    }).catch(function () { return false; });
+  }
+
+  function createMemoryFromForm() {
+    var title = (($('#memNewTitle') || {}).value || '').trim();
+    var body = (($('#memNewBody') || {}).value || '').trim();
+    var category = ($('#memNewCat') || {}).value || '日常';
+    var importance = parseInt((($('#memNewImportance') || {}).value || '6'), 10);
+    if (!body) { toast('写一句要记住的话吧。'); return; }
+    if (!serverOnline) { toast('离线模式下先不新增记忆，连上后端再试。'); return; }
+    serverFetch('/memories', {
+      method: 'POST',
+      body: { title: title || body.slice(0, 20), body: body, category: category, importance: isNaN(importance) ? 6 : importance, source: '手动新建' }
+    }).then(function (data) {
+      if (data.memory) state.memories.unshift(data.memory);
+      closeSheet();
+      renderMemories();
+      toast('记好了。');
+    }).catch(apiToast);
+  }
+
+  function rememberLastReply() {
+    if (!serverOnline) { toast('离线模式下先不写记忆。'); return; }
+    var last = '';
+    for (var i = chatMessages.length - 1; i >= 0; i--) {
+      if (chatMessages[i].role === 'ai' && chatMessages[i].text && !chatMessages[i].uiOnly) { last = chatMessages[i].text; break; }
+    }
+    if (!last) { toast('还没有可以记住的回复。'); return; }
+    var char = currentChar();
+    var chat = char ? chatOf(char.id) : null;
+    serverFetch('/memories/remember', {
+      method: 'POST',
+      body: { text: last, title: last.split('。')[0].slice(0, 20), source: '聊天里点「记住」', chatId: chat ? chat.id : '' }
+    }).then(function (data) {
+      closeSheet();
+      if (data.memory) {
+        state.memories.unshift(data.memory);
+        toast('记好了：' + data.memory.title);
+        renderMemories();
+      } else {
+        toast(data.message || '这句话已经在记忆里了。');
+      }
+    }).catch(apiToast);
+  }
+
   function saveMemory(id) {
     var m = state.memories.filter(function (x) { return x.id === id; })[0];
     if (!m) return;
@@ -2588,6 +3325,9 @@
     var b = $('#memBodyInput');
     if (t) m.title = t.value.trim() || m.title;
     if (b) m.body = b.value.trim() || m.body;
+    if (serverOnline) {
+      serverFetch('/memories/' + encodeURIComponent(id), { method: 'PUT', body: { title: m.title, body: m.body } }).catch(apiToast);
+    }
     save();
     renderMemories();
     closeSheet();
@@ -2598,6 +3338,10 @@
     var m = state.memories.filter(function (x) { return x.id === id; })[0];
     if (!m) return;
     m.pinned = !m.pinned;
+    if (m.pinned) m.status = 'pinned';
+    if (serverOnline) {
+      serverFetch('/memories/' + encodeURIComponent(id) + '/pin', { method: 'POST', body: { pinned: m.pinned } }).catch(apiToast);
+    }
     save();
     renderMemories();
     openSheet('memory', id);
@@ -2608,6 +3352,9 @@
     var m = state.memories.filter(function (x) { return x.id === id; })[0];
     if (!m) return;
     m.forgotten = true;
+    if (serverOnline) {
+      serverFetch('/memories/' + encodeURIComponent(id) + '/forget', { method: 'POST' }).catch(apiToast);
+    }
     save();
     renderMemories();
     closeSheet();
@@ -2618,6 +3365,9 @@
     var m = state.memories.filter(function (x) { return x.id === id; })[0];
     if (!m) return;
     m.forgotten = false;
+    if (serverOnline) {
+      serverFetch('/memories/' + encodeURIComponent(id) + '/restore', { method: 'POST' }).catch(apiToast);
+    }
     save();
     renderMemories();
     openSheet('forgotten');
@@ -2679,6 +3429,9 @@
     var el = $('#nowInput');
     if (!el) return;
     state.nowText = el.value.trim() || DATA.nowText;
+    if (serverOnline) {
+      serverFetch('/memories/now', { method: 'PUT', body: { body: state.nowText } }).catch(apiToast);
+    }
     save();
     renderMemories();
     closeSheet();
@@ -2835,6 +3588,8 @@
     if (action === 'new-char') return openSheet('charEdit');
     if (action === 'new-book') return openSheet('bookEdit');
     if (action === 'new-persona') return createPersonaDraft();
+    if (action === 'create-memory') return createMemoryFromForm();
+    if (action === 'remember-last') return rememberLastReply();
     if (action === 'export-personas') return exportPersonas();
     if (action === 'backup') return backupNow();
     if (action === 'mic') return toast('语音输入是样稿示意，先替你收好。');
@@ -2891,7 +3646,8 @@
     if ((hit = target.closest('[data-switch-char]'))) { switchCharacter(hit.getAttribute('data-switch-char')); return; }
     if ((hit = target.closest('[data-char-open]'))) { libCharId = hit.getAttribute('data-char-open'); renderCharLibrary(); return; }
     if ((hit = target.closest('[data-char-edit]'))) { openSheet('charEdit', hit.getAttribute('data-char-edit')); return; }
-    if ((hit = target.closest('[data-char-export]'))) { exportCharacter(hit.getAttribute('data-char-export')); return; }
+    if ((hit = target.closest('[data-char-export]'))) { exportCharacter(hit.getAttribute('data-char-export'), 'json'); return; }
+    if ((hit = target.closest('[data-char-export-png]'))) { exportCharacter(hit.getAttribute('data-char-export-png'), 'png'); return; }
     if ((hit = target.closest('[data-char-del]'))) {
       openSheet('confirm', { title: '删除角色？', text: '她的聊天记录也会一起删掉，删掉就找不回来了。', label: '删除', run: 'delete-char', id: hit.getAttribute('data-char-del') });
       return;
@@ -2994,6 +3750,12 @@
     if ((hit = target.closest('[data-mem-pin]'))) { togglePin(hit.getAttribute('data-mem-pin')); return; }
     if ((hit = target.closest('[data-mem-forget]'))) { forgetMemory(hit.getAttribute('data-mem-forget')); return; }
     if ((hit = target.closest('[data-mem-restore]'))) { restoreMemory(hit.getAttribute('data-mem-restore')); return; }
+    if ((hit = target.closest('[data-migrate]'))) {
+      var mode = hit.getAttribute('data-migrate');
+      if (mode === 'skip') { try { localStorage.setItem('msyq.migrated', '1'); } catch (e) { /* 忽略 */ } closeSheet(); toast('先不迁移，随时可以在设置里再来。'); return; }
+      runMigration(mode === 'keys');
+      return;
+    }
     if ((hit = target.closest('[data-song]'))) {
       var parts = hit.getAttribute('data-song').split(':');
       selectSong(+parts[0], +parts[1]);
@@ -3145,6 +3907,16 @@
   function findModel(id) { return byId(state.models, id); }
   function findPreset(id) { return byId(state.promptPresets, id); }
   function providerOf(model) { return model ? findProvider(model.providerId) : null; }
+  function providerHasKey(provider) {
+    if (!provider) return false;
+    if (SERVER_MODE && serverOnline) return !!provider.hasKey;
+    return !!provider.apiKey;
+  }
+  function providerKeyMask(provider) {
+    if (!provider) return '';
+    if (SERVER_MODE && serverOnline) return provider.keyMasked || '';
+    return provider.apiKey ? maskKey(provider.apiKey) : '';
+  }
   function protocolOf(provider) {
     var list = DATA.protocols || [];
     for (var i = 0; i < list.length; i++) if (list[i].id === (provider && provider.protocol)) return list[i];
@@ -3226,22 +3998,32 @@
   }
 
   /* ---------- 思考档位：档位 -> 请求参数（独立函数，后端可复用） ---------- */
-  var REASON_TEXT = { off: '关闭', auto: '自动', low: '低', medium: '中', high: '高', max: '最高', on: '开启' };
-  var REASON_SHORT = { off: '关', auto: '自动', low: '低', medium: '中', high: '高', max: '最高', on: '开' };
+  var REASON_TEXT = { off: '关闭', auto: '自动', low: '低', medium: '中', high: '高', xhigh: '很高', max: '最高', on: '开启', minimal: '几乎不思考' };
+  var REASON_SHORT = { off: '关', auto: '自动', low: '低', medium: '中', high: '高', xhigh: '很高', max: '最高', on: '开' };
   var REASON_MODES = [
     { id: 'none', label: '不能调（不发送任何思考参数）' },
-    { id: 'openai_effort', label: 'OpenAI reasoning_effort / reasoning.effort' },
-    { id: 'anthropic_budget', label: 'Anthropic thinking.budget_tokens' },
-    { id: 'gemini_budget', label: 'Gemini thinkingConfig.thinkingBudget' },
-    { id: 'deepseek', label: 'DeepSeek 思考开关（关闭 / 开启）' },
-    { id: 'openrouter', label: 'OpenRouter reasoning.effort / max_tokens' },
+    { id: 'deepseek', label: 'DeepSeek thinking + reasoning_effort' },
+    { id: 'openai_effort', label: 'OpenAI reasoning.effort / reasoning_effort' },
+    { id: 'anthropic_effort', label: 'Anthropic output_config.effort（5.x）' },
+    { id: 'anthropic_budget', label: 'Anthropic thinking.budget_tokens（只留给 4.5 及更早）' },
+    { id: 'gemini_level', label: 'Gemini thinkingLevel（3.x / 4.x）' },
+    { id: 'gemini_budget', label: 'Gemini thinkingBudget（只给 2.5）' },
+    { id: 'openrouter', label: 'OpenRouter reasoning.effort' },
+    { id: 'xai', label: 'xAI grok reasoning_effort' },
+    { id: 'qwen_thinking', label: '通义千问 enable_thinking' },
+    { id: 'kimi', label: 'Kimi reasoning_effort' },
+    { id: 'zhipu', label: '智谱 GLM thinking + reasoning_effort' },
+    { id: 'ark', label: '火山方舟（豆包）thinking / reasoning_effort' },
+    { id: 'siliconflow_thinking', label: '硅基流动 enable_thinking' },
     { id: 'relay_suffix', label: '中转站用模型名区分档位' }
   ];
   function reasonModeLabel(mode) {
     var map = {
-      openai_effort: 'reasoning effort', anthropic_budget: 'thinking budget',
-      gemini_budget: 'thinking budget', deepseek: '思考开关',
-      openrouter: 'reasoning', relay_suffix: '模型名区分', none: '不支持'
+      openai_effort: 'reasoning effort', anthropic_effort: 'output effort', anthropic_budget: 'thinking budget',
+      gemini_level: 'thinking level', gemini_budget: 'thinking budget', deepseek: 'thinking + effort',
+      openrouter: 'reasoning', xai: 'reasoning effort', qwen_thinking: 'enable thinking', kimi: 'reasoning effort',
+      zhipu: 'thinking + effort', ark: 'thinking / effort', siliconflow_thinking: 'enable thinking',
+      relay_suffix: '模型名区分', none: '不支持'
     };
     return map[mode] || '思考';
   }
@@ -3264,74 +4046,142 @@
     if (chat && chat.reasoningLevel && levels.indexOf(chat.reasoningLevel) !== -1) return chat.reasoningLevel;
     return reasoningDefaultLevel(model);
   }
-
+  function effortClamp(lv, order) {
+    order = order || ['low', 'medium', 'high', 'xhigh', 'max'];
+    if (lv === 'max' && order.indexOf('max') === -1) lv = order.indexOf('xhigh') !== -1 ? 'xhigh' : 'high';
+    if (lv === 'xhigh' && order.indexOf('xhigh') === -1) lv = 'high';
+    if (order.indexOf(lv) === -1) lv = order[order.length - 1] || 'high';
+    return lv;
+  }
   /*
-   * buildReasoningParams(model, level)
-   * 返回 { supported, mode, level, params, note }
-   * params 为要合并进请求体的参数；后端阶段直接复用这个函数即可。
+   * buildReasoningParams(model, level) —— 与 server/reasoning.py 同一套映射。
+   * 返回 { supported, mode, level, params, note, dropSampling }
    */
   function buildReasoningParams(model, level) {
-    if (!model) return { supported: false, mode: 'none', level: level || 'off', params: null, note: '还没有选模型' };
+    if (!model) return { supported: false, mode: 'none', level: level || 'off', params: null, note: '还没有选模型', dropSampling: [] };
     var r = model.reasoning || { mode: 'none', levels: [] };
-    if (r.mode === 'none' || !r.levels || !r.levels.length) {
-      return { supported: false, mode: 'none', level: level || 'off', params: null, note: '这个模型不能调思考深度，请求里不会带任何思考参数' };
+    var levels = reasoningLevels(model);
+    if (r.mode === 'none' || !levels.length) {
+      return { supported: false, mode: 'none', level: level || 'off', params: null, note: '这个模型不能调思考深度，请求里不会带任何思考参数', dropSampling: [] };
     }
     var provider = providerOf(model) || {};
     var protocol = provider.protocol || 'openai';
-    var lv = r.levels.indexOf(level) === -1 ? reasoningDefaultLevel(model) : level;
-    var out = { supported: true, mode: r.mode, level: lv, params: null, note: '' };
+    if (protocol === 'openai' && provider.advanced && provider.advanced.responseApi) protocol = 'openai_responses';
+    var lv = levels.indexOf(level) === -1 ? (level === 'auto' || level === 'off' ? level : reasoningDefaultLevel(model)) : level;
+    var out = { supported: true, mode: r.mode, level: lv, params: null, note: '', dropSampling: [] };
+    var mid = String(model.modelId || '').toLowerCase();
     if (r.mode === 'deepseek') {
-      if (lv === 'on') {
-        out.params = { thinking: { type: 'enabled' } };
-        out.note = 'DeepSeek 官方：打开思考模式';
-      } else {
-        out.params = { thinking: { type: 'disabled' } };
-        out.note = 'DeepSeek 官方：关闭思考模式';
-      }
+      if (lv === 'off') { out.params = { thinking: { type: 'disabled' } }; out.note = 'thinking.type = disabled（关闭思考）'; }
+      else { out.params = { thinking: { type: 'enabled' }, reasoning_effort: lv }; out.dropSampling = ['temperature', 'presence_penalty', 'frequency_penalty']; out.note = 'thinking.type = enabled，reasoning_effort = ' + lv + '；开启思考时不发 temperature / penalty'; }
       return out;
     }
     if (r.mode === 'openai_effort') {
-      if (lv === 'auto') {
-        out.params = null;
-        out.note = '自动：交给模型自己决定，请求里不带 effort';
+      if (lv === 'auto') { out.params = protocol === 'openai_responses' ? { reasoning: { summary: 'auto' } } : null; out.note = '自动：不带 effort，交给模型默认值'; return out; }
+      var eff = lv === 'off' ? (mid.indexOf('gpt-5') !== -1 && mid.indexOf('gpt-6') === -1 ? 'minimal' : 'none') : lv;
+      out.params = protocol === 'openai_responses' ? { reasoning: { effort: eff, summary: 'auto' } } : { reasoning_effort: eff };
+      out.note = (protocol === 'openai_responses' ? 'reasoning.effort = ' : 'reasoning_effort = ') + eff;
+      return out;
+    }
+    if (r.mode === 'anthropic_effort') {
+      out.dropSampling = ['temperature', 'top_p', 'top_k'];
+      if (lv === 'auto') { out.note = '自动：不发 output_config，交给模型默认值'; return out; }
+      if (lv === 'off') {
+        var offMode = r.offMode || 'disabled';
+        if (offMode === 'disabled') { out.params = { thinking: { type: 'disabled' } }; out.note = 'thinking.type = disabled'; }
+        else if (offMode === 'between_tools') { out.params = { thinking: { type: 'between_tools' } }; out.note = 'thinking.type = between_tools（这家不允许 disabled）'; }
+        else { out.supported = false; out.note = '这个模型思考一直开着，不能关闭，只能调深浅'; }
         return out;
       }
-      var eff = lv === 'off' ? 'none' : lv;
-      out.params = protocol === 'openai_responses' ? { reasoning: { effort: eff } } : { reasoning_effort: eff };
-      out.note = protocol === 'openai_responses' ? 'reasoning.effort = ' + eff : 'reasoning_effort = ' + eff;
+      var aeff = effortClamp(lv);
+      out.params = { output_config: { effort: aeff }, thinking: { type: 'adaptive', display: 'summarized' } };
+      out.note = 'output_config.effort = ' + aeff + (aeff === 'xhigh' || aeff === 'max' ? '，max_tokens 至少 64000' : '');
       return out;
     }
     if (r.mode === 'anthropic_budget') {
-      if (lv === 'off') { out.params = null; out.note = '关闭：请求里不带 thinking'; return out; }
-      if (lv === 'auto') { out.params = null; out.note = '自动：不带 budget，由模型决定'; return out; }
+      if (lv === 'off' || lv === 'auto') { out.note = lv === 'off' ? '关闭：不发 thinking' : '自动：不发 budget'; return out; }
       var budget = lv === 'low' ? 2048 : lv === 'medium' ? 8192 : 24576;
       out.params = { thinking: { type: 'enabled', budget_tokens: budget }, max_tokens: budget + 4096 };
-      out.note = 'thinking.budget_tokens = ' + budget + '，max_tokens 已放到 ' + (budget + 4096) + '（必须大于 budget）';
+      out.note = 'thinking.budget_tokens = ' + budget + '，max_tokens 至少大于 budget';
+      return out;
+    }
+    if (r.mode === 'gemini_level') {
+      out.dropSampling = ['temperature', 'top_p', 'top_k'];
+      if (lv === 'auto') { out.note = '自动：不发 thinkingLevel'; return out; }
+      if (lv === 'off') {
+        if (r.supportsMinimal) { out.params = { generationConfig: { thinkingConfig: { thinkingLevel: 'minimal', includeThoughts: true } } }; out.note = 'thinkingLevel = minimal（几乎不思考）'; }
+        else { out.supported = false; out.note = '这个 Gemini 模型不提供关闭：minimal 会报错'; }
+        return out;
+      }
+      var glv = effortClamp(lv, ['low', 'medium', 'high']);
+      out.params = { generationConfig: { thinkingConfig: { thinkingLevel: glv, includeThoughts: true } } };
+      out.note = 'thinkingLevel = ' + glv + '（只发 level）';
       return out;
     }
     if (r.mode === 'gemini_budget') {
-      if (lv === 'max') {
-        out.params = { generationConfig: { thinkingConfig: { thinkingLevel: 'high' } } };
-        out.note = '新模型可用 thinkingLevel = high';
-        return out;
-      }
+      if (lv === 'off' && r.offUnsupported) { out.supported = false; out.note = '2.5 Pro 不能关闭思考（budget=0 会 400）'; return out; }
       var gb = lv === 'off' ? 0 : lv === 'auto' ? -1 : lv === 'low' ? 1024 : lv === 'medium' ? 8192 : 24576;
+      if (lv === 'xhigh' || lv === 'max') gb = 24576;
       out.params = { generationConfig: { thinkingConfig: { thinkingBudget: gb } } };
-      out.note = 'thinkingConfig.thinkingBudget = ' + gb + (lv === 'auto' ? '（自动 = -1）' : lv === 'off' ? '（关闭 = 0，只在模型允许时）' : '');
+      out.note = 'thinkingConfig.thinkingBudget = ' + gb + '（只发 budget）';
       return out;
     }
     if (r.mode === 'openrouter') {
-      if (lv === 'off') { out.params = { reasoning: { enabled: false } }; out.note = 'reasoning.enabled = false'; return out; }
-      if (lv === 'auto') { out.params = { reasoning: { enabled: true } }; out.note = 'reasoning.enabled = true，由聚合站挑模型'; return out; }
-      if (lv === 'max') { out.params = { reasoning: { max_tokens: 32768 } }; out.note = 'reasoning.max_tokens = 32768'; return out; }
-      out.params = { reasoning: { effort: lv } };
-      out.note = 'reasoning.effort = ' + lv;
+      var efforts = (r.supportedEfforts || []).slice();
+      if (lv === 'off') {
+        if (efforts.indexOf('none') !== -1 && !r.mandatory) { out.params = { reasoning: { effort: 'none' } }; out.note = 'reasoning.effort = none'; }
+        else { out.supported = false; out.note = '这个模型默认就在思考，不能关闭'; }
+        return out;
+      }
+      if (lv === 'auto') { out.note = '自动：不发 reasoning（enabled=true 官方定义是 medium）'; return out; }
+      var oeff = effortClamp(lv, efforts.length ? efforts : ['low', 'medium', 'high', 'xhigh', 'max']);
+      out.params = { reasoning: { effort: oeff } };
+      out.note = 'reasoning.effort = ' + oeff;
+      return out;
+    }
+    if (r.mode === 'xai') {
+      if (lv === 'auto') { out.note = '自动：不发 reasoning_effort'; return out; }
+      var xeff = effortClamp(lv, levels.filter(function (x) { return x !== 'auto' && x !== 'off'; }));
+      out.params = { reasoning_effort: xeff }; out.dropSampling = ['presence_penalty', 'frequency_penalty'];
+      out.note = 'reasoning_effort = ' + xeff;
+      return out;
+    }
+    if (r.mode === 'qwen_thinking') {
+      if (lv === 'off') { out.params = { enable_thinking: false }; out.note = 'enable_thinking = false'; return out; }
+      if (lv === 'auto') { out.note = '自动：不发 enable_thinking'; return out; }
+      if (mid.indexOf('qwen3.8-max') !== -1) { var qeff = effortClamp(lv, ['low', 'medium', 'high', 'xhigh']); out.params = { enable_thinking: true, reasoning_effort: qeff }; out.note = 'enable_thinking + reasoning_effort = ' + qeff; }
+      else { var qb = lv === 'low' ? 2048 : lv === 'medium' ? 8192 : 32768; out.params = { enable_thinking: true, thinking_budget: qb }; out.note = 'enable_thinking + thinking_budget = ' + qb; }
+      return out;
+    }
+    if (r.mode === 'kimi') {
+      out.dropSampling = ['temperature', 'top_p', 'presence_penalty', 'frequency_penalty'];
+      if (mid.indexOf('k2') !== -1) { out.params = { thinking: { type: lv === 'off' ? 'disabled' : 'enabled' } }; out.note = 'K2 系用 thinking 开关（12 月底下线）'; return out; }
+      if (lv === 'auto') { out.note = '自动：不发 reasoning_effort，Kimi 默认最高'; return out; }
+      var keff = effortClamp(lv, ['low', 'high', 'max']); out.params = { reasoning_effort: keff }; out.note = 'reasoning_effort = ' + keff;
+      return out;
+    }
+    if (r.mode === 'zhipu') {
+      if (lv === 'off') { out.params = { thinking: { type: 'disabled' } }; out.note = 'thinking.type = disabled'; return out; }
+      var zeff = effortClamp(lv, ['low', 'high', 'max']); out.params = { thinking: { type: 'enabled' }, reasoning_effort: zeff }; out.note = 'thinking + reasoning_effort = ' + zeff;
+      return out;
+    }
+    if (r.mode === 'ark') {
+      if (lv === 'off') { out.params = { thinking: { type: 'disabled' } }; out.note = 'thinking.type = disabled'; return out; }
+      if (lv === 'auto') { out.note = '自动：不发 thinking / reasoning_effort'; return out; }
+      var aeff2 = (lv === 'xhigh' || lv === 'max') ? 'high' : effortClamp(lv, ['low', 'medium', 'high']); out.params = { reasoning_effort: aeff2 }; out.note = 'reasoning_effort = ' + aeff2;
+      return out;
+    }
+    if (r.mode === 'siliconflow_thinking') {
+      if (lv === 'off') { out.params = { enable_thinking: false }; out.note = 'enable_thinking = false'; return out; }
+      if (lv === 'auto') { out.note = '自动：不发 enable_thinking'; return out; }
+      if (mid.indexOf('deepseek-v4') !== -1 || mid.indexOf('glm-5.2') !== -1 || mid.indexOf('glm-5-2') !== -1) {
+        var seff = (lv === 'max' || lv === 'xhigh') ? 'max' : 'high'; out.params = { reasoning_effort: seff }; out.note = 'reasoning_effort = ' + seff;
+      } else { var sb = lv === 'low' ? 2048 : lv === 'medium' ? 8192 : 32768; out.params = { enable_thinking: true, thinking_budget: sb }; out.note = 'enable_thinking + thinking_budget = ' + sb; }
       return out;
     }
     if (r.mode === 'relay_suffix') {
       var target = (r.map && r.map[lv]) || model.modelId;
       out.params = { model: target };
-      out.note = target === model.modelId ? '这家用模型名区分档位；当前仍用 ' + target : '这家用模型名区分档位：切到 ' + target;
+      out.note = '这家用模型名区分档位：切到 ' + target;
       return out;
     }
     out.note = '未知的思考方式，先不带参数';
@@ -3479,7 +4329,7 @@
         '<input id="providerSearch" data-search="provider" type="search" placeholder="搜索提供商或模型" value="' + esc(providerQuery) + '">' +
       '</div>' +
       '<div class="a2-banner">' + IC_INFO_A2 +
-        '<span>正式版会把 API Key 存在 VPS 后端，浏览器不直接拿 Key 发请求；样稿阶段 Key 只在这台手机的 localStorage 里，界面始终掩码。</span></div>' +
+        '<span>API Key 加密存在本机后端，界面始终只显示掩码；所有模型请求由后端发出，浏览器不再直连。</span></div>' +
       '<div class="prov-list" id="provListBox"></div>' +
       '<p class="a2-note">点一家进去改配置、拉取模型或测试连接。禁用的提供商会变浅红，也不会出现在聊天的模型选择里。</p>';
     renderProviderListInner();
@@ -3580,7 +4430,7 @@
 
   function providerConfigTabHtml(p) {
     var proto = protocolOf(p);
-    var keyValue = p.apiKey ? maskKey(p.apiKey) : '';
+    var keyValue = providerKeyMask(p);
     var iconStrip = '<div class="icon-strip">' + iconChoicesHtml(providerIconKey(p) || 'generic') + '</div>';
     return '<div class="a2-card form-card">' +
         a2SwitchRow('provSwitchEnabled', '启用这家', '停用后不出现在聊天的模型选择里', p.enabled) +
@@ -3597,14 +4447,14 @@
         '<div class="form-row"><span class="form-row__label">API Key</span><div class="form-row__main">' +
           '<div class="key-row"><input class="field" id="provKey" type="password" value="' + esc(keyValue) + '" placeholder="sk-••••••••" autocomplete="off" spellcheck="false">' +
           '<button class="eye-btn" type="button" data-a2="key-eye">' + IC_EYE + '显示</button></div>' +
-          '<p class="form-row__hint">界面始终掩码。导出时默认不带 Key；勾选才带，并会提示风险。</p>' +
+          '<p class="form-row__hint">Key 加密保存在本机后端，浏览器只显示掩码；导出默认不带 Key。</p>' +
         '</div></div>' +
         a2SwitchRow('provSwitchResponseApi', 'Response API', '打开后用 /responses，而不是 /chat/completions', p.advanced && p.advanced.responseApi) +
         a2SwitchRow('provSwitchThinking', '回传历史思考过程', '关闭后不在回复里显示「想了 N 秒」', !p.advanced || p.advanced.returnThinking !== false) +
         a2SwitchRow('provSwitchBalance', '获取账户余额', proto.balance ? '这家有官方余额接口' : '这家不支持查询余额', p.advanced && p.advanced.fetchBalance) +
       '</div>' +
       '<div class="a2-banner">' + IC_INFO_A2 +
-        '<span>API Key 在样稿里只存 localStorage；正式版由 VPS 后端保管，浏览器不直接拿 Key 发请求，也顺带解决跨域。</span></div>';
+        '<span>API Key 加密保存在本机后端，浏览器不直接拿 Key 发请求；测试连接、拉模型、余额、聊天都由后端转发。</span></div>';
   }
 
   function providerModelsTabHtml(p) {
@@ -3652,7 +4502,6 @@
     return '<div class="a2-card form-card">' +
         a2InputRow('请求超时', '<input class="field" id="provTimeout" type="number" inputmode="numeric" value="' + esc(adv.timeout || 45) + '" placeholder="45">', '单位秒；测试连接固定最多等 8 秒') +
         a2SwitchRow('provSwitchThinkingAdv', '回传历史思考过程', '关闭后回复里不显示「想了 N 秒」', adv.returnThinking !== false) +
-        a2SwitchRow('provSwitchDemo400', '演示 400 兜底', '样稿演示：这家会对思考参数返回 400，自动去掉后重试一次', !!adv.demo400) +
       '</div>' +
       bal +
       '<div class="a2-card">' +
@@ -3704,7 +4553,14 @@
     el = document.getElementById('provKey');
     if (el) {
       var v = el.value || '';
-      if (v.indexOf('•') === -1) p.apiKey = v.trim();
+      if (v.indexOf('•') === -1) {
+        if (SERVER_MODE && serverOnline) {
+          /* 只在用户真的输入了新 Key 时上传；明文不留在前端状态里 */
+          if (v.trim()) pendingProviderKey = v.trim();
+        } else {
+          p.apiKey = v.trim();
+        }
+      }
     }
     el = document.getElementById('provSwitchEnabled'); if (el) p.enabled = el.getAttribute('aria-checked') === 'true';
     if (!p.advanced) p.advanced = {};
@@ -3712,17 +4568,31 @@
     el = document.getElementById('provSwitchThinking'); if (el) p.advanced.returnThinking = el.getAttribute('aria-checked') === 'true';
     el = document.getElementById('provSwitchThinkingAdv'); if (el) p.advanced.returnThinking = el.getAttribute('aria-checked') === 'true';
     el = document.getElementById('provSwitchBalance'); if (el) p.advanced.fetchBalance = el.getAttribute('aria-checked') === 'true';
-    el = document.getElementById('provSwitchDemo400'); if (el) p.advanced.demo400 = el.getAttribute('aria-checked') === 'true';
     el = document.getElementById('provTimeout'); if (el && el.value) p.advanced.timeout = Math.max(5, parseInt(el.value, 10) || 45);
   }
   function saveProvider(silent) {
     var p = findProvider(providerDetailId);
     if (!p) return;
     collectProviderForm(p);
-    save();
-    if (providerTab === 'config') renderProviderDetail();
-    else renderProviderDetail();
-    if (!silent) toast('「' + p.name + '」已保存。');
+    function done() {
+      save();
+      renderProviderDetail();
+      renderMe();
+      if (silent) return;
+      toast('「' + p.name + '」已保存。');
+    }
+    if (SERVER_MODE && serverOnline && pendingProviderKey !== null) {
+      var key = pendingProviderKey;
+      pendingProviderKey = null;
+      serverFetch('/providers/' + encodeURIComponent(p.id) + '/key', { method: 'POST', body: { apiKey: key } }).then(function (data) {
+        p.hasKey = !!data.hasKey;
+        p.keyMasked = data.keyMasked || '';
+        delete p.apiKey;
+        done();
+      }).catch(function (err) { apiToast(err); done(); });
+      return;
+    }
+    done();
   }
   function deleteProvider() {
     var p = findProvider(providerDetailId);
@@ -3771,7 +4641,7 @@
       id: newId('prv'), name: uniqueProviderName(tpl.name), icon: tpl.icon, protocol: tpl.protocol,
       baseUrl: tpl.baseUrl, apiPath: tpl.apiPath, apiKey: '', enabled: true, models: [],
       balance: { supported: false, amount: 0, currency: '¥', at: '' },
-      advanced: { responseApi: false, returnThinking: true, fetchBalance: false, demo400: false, timeout: 45 },
+      advanced: { responseApi: false, returnThinking: true, fetchBalance: false, timeout: 45 },
       source: 'user', extras: {}
     };
     state.providers.push(p);
@@ -3810,13 +4680,13 @@
   };
 
   var PULL_DEMO = {
-    deepseek: ['deepseek-chat', 'deepseek-reasoner'],
-    openai: ['gpt-5', 'gpt-5-mini', 'o4-mini'],
-    openai_responses: ['gpt-5', 'o4-mini'],
-    anthropic: ['claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-opus-4-1'],
-    gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
-    openrouter: ['openai/gpt-5', 'anthropic/claude-sonnet-4.5', 'moonshotai/kimi-k2', 'google/gemini-2.5-pro'],
-    siliconcloud: ['Qwen/Qwen3-235B-A22B', 'deepseek-ai/DeepSeek-V3', 'moonshotai/Kimi-K2-Instruct', 'THUDM/GLM-4.1V-9B-Thinking']
+    deepseek: ['deepseek-flash', 'deepseek-v4-pro'],
+    openai: ['gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra', 'gpt-6.1-terra'],
+    openai_responses: ['gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra'],
+    anthropic: ['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5', 'claude-opus-5-5'],
+    gemini: ['gemini-3.8-flash', 'gemini-4-argon', 'gemini-3.5-flash-lite'],
+    openrouter: ['openai/gpt-6.1-sol', 'anthropic/claude-sonnet-5.5', 'moonshotai/kimi-k3', 'x-ai/grok-4.7'],
+    siliconcloud: ['deepseek-ai/DeepSeek-V4', 'Qwen/Qwen3-235B-A22B', 'zai-org/GLM-5.2']
   };
   function demoModelIds(protocolId) {
     return (PULL_DEMO[protocolId] || PULL_DEMO.openai).slice();
@@ -3840,12 +4710,43 @@
     var p = findProvider(providerDetailId);
     if (!p) return;
     collectProviderForm(p);
-    var proto = protocolOf(p);
-    if (!String(p.apiKey || '').trim() && proto.id !== 'openai') { /* 允许先试，错误分类会告诉原因 */ }
-    pullState = { providerId: p.id, url: apiUrl(p, 'models'), loading: true, items: [], selected: {}, error: '', demo: false };
+    var guessedUrl = String(p.baseUrl || '').replace(/\/+$/, '') + (protocolOf(p).modelsPath || '/models');
+    pullState = { providerId: p.id, url: guessedUrl, loading: true, items: [], selected: {}, error: '', demo: false };
     openSheet('pullModels');
     pullState.startedAt = Date.now();
-    fetchWithTimeout(pullState.url, { method: 'GET', headers: authHeaders(p) }, 8000).then(function (res) {
+    if (SERVER_MODE && serverOnline) {
+      var saved = pendingProviderKey;
+      var chain = Promise.resolve();
+      if (saved) {
+        pendingProviderKey = null;
+        chain = serverFetch('/providers/' + encodeURIComponent(p.id) + '/key', { method: 'POST', body: { apiKey: saved } }).then(function () {
+          p.hasKey = true;
+        });
+      }
+      chain.then(function () {
+        save();
+        return serverFetch('/providers/' + encodeURIComponent(p.id) + '/pull-models', { method: 'POST' });
+      }).then(function (data) {
+        pullState.loading = false;
+        pullState.url = data.url || pullState.url;
+        if (!data.ok) {
+          pullState.error = data.message || '拉取失败，检查地址与 Key。';
+          pullState.items = [];
+        } else {
+          pullState.ids = data.ids || [];
+          pullState.items = pullState.ids;
+          pullState.items.forEach(function (id) { if (!modelIdExists(p.id, id)) pullState.selected[id] = true; });
+        }
+        refreshPullSheet();
+      }).catch(function (err) {
+        pullState.loading = false;
+        pullState.error = err.message || '拉取失败，检查地址与 Key。';
+        pullState.items = [];
+        refreshPullSheet();
+      });
+      return;
+    }
+    fetchWithTimeout(guessedUrl, { method: 'GET', headers: authHeaders(p) }, 8000).then(function (res) {
       if (!res.ok) { var e = new Error('http'); e.status = res.status; throw e; }
       return res.json();
     }).then(function (json) {
@@ -3854,7 +4755,6 @@
       pullState.loading = false;
       pullState.items = ids;
       ids.forEach(function (id) { if (!modelIdExists(p.id, id)) pullState.selected[id] = true; });
-      window.__a2lastPull = { state: 'ok', count: ids.length, url: pullState.url };
       refreshPullSheet();
     }).catch(function (err) {
       var c = err && err.name === 'EmptyList'
@@ -3865,7 +4765,6 @@
       pullState.error = c.message;
       pullState.items = demoModelIds(protocolOf(p).id);
       pullState.items.forEach(function (id) { if (!modelIdExists(p.id, id)) pullState.selected[id] = true; });
-      window.__a2lastPull = { state: 'fail', kind: c.kind, message: c.message, demo: true, count: pullState.items.length, url: pullState.url };
       refreshPullSheet();
     });
   }
@@ -3885,7 +4784,7 @@
       body = '';
       if (pullState.error) {
         body += '<div class="a2-banner a2-banner--warn">' + IC_INFO_A2 +
-          '<span>' + esc(pullState.error) + (pullState.demo ? ' 下面先放一份示例列表给你勾选；接上服务器后这里会换成真实模型。' : '') + '</span></div>';
+          '<span>' + esc(pullState.error) + (pullState.demo ? ' 下面先放一份示例列表给你勾选。' : '') + '</span></div>';
       } else {
         body += '<div class="test-state is-ok"><span class="test-state__dot"></span><span>拉回了 ' + pullState.items.length + ' 个模型，勾选要加入的。</span></div>';
       }
@@ -3908,7 +4807,7 @@
     }
     return {
       title: pullState.loading ? '拉取模型' : (pullState.demo ? '拉取模型 · 示例' : '拉取模型'),
-      body: body + '<p class="a2-note">样稿没有后端，浏览器直连中转站多半会被跨域拦。拉不到时会给出中文原因，再放一份示例列表。</p>',
+      body: body + '<p class="a2-note">' + (SERVER_MODE && serverOnline ? '请求由本机后端发出，浏览器不拿 Key；失败时只给中文原因。' : '离线模式：浏览器直连中转站多半会被跨域拦，拉不到时会放一份示例列表。') + '</p>',
       foot: pullState.loading
         ? '<button class="btn" type="button" data-close>取消</button>'
         : '<button class="btn" type="button" data-close>取消</button>' +
@@ -3974,18 +4873,42 @@
   function defaultReasoningFor(modelId) {
     var s = String(modelId || '').toLowerCase();
     if (s.indexOf('claude') !== -1) {
-      return { mode: 'anthropic_budget', levels: ['off', 'auto', 'low', 'medium', 'high'], defaultLevel: 'high', note: 'Claude 用 thinking.budget_tokens' };
+      return { mode: 'anthropic_effort', levels: ['off', 'auto', 'low', 'medium', 'high', 'xhigh', 'max'], defaultLevel: 'high', offMode: 'disabled', note: 'Anthropic output_config.effort（5.x）' };
+    }
+    if (s.indexOf('gemini-2.5') !== -1) {
+      return { mode: 'gemini_budget', levels: ['off', 'auto', 'low', 'medium', 'high'], defaultLevel: 'auto', note: '2.5 用 thinkingBudget' };
     }
     if (s.indexOf('gemini') !== -1) {
-      return { mode: 'gemini_budget', levels: ['off', 'auto', 'low', 'medium', 'high'], defaultLevel: 'auto', note: 'Gemini 用 thinkingConfig.thinkingBudget' };
+      return { mode: 'gemini_level', levels: ['auto', 'low', 'medium', 'high'], defaultLevel: 'auto', supportsMinimal: /flash-lite|3\.6|3\.5-flash/.test(s), note: 'Gemini 3+ 用 thinkingLevel' };
     }
     if (s.indexOf('deepseek') !== -1) {
-      return { mode: 'deepseek', levels: ['off', 'on'], defaultLevel: 'on', note: 'DeepSeek 官方只有关闭 / 开启两档' };
+      return { mode: 'deepseek', levels: ['off', 'low', 'high', 'max'], defaultLevel: 'high', note: 'DeepSeek thinking + reasoning_effort' };
     }
-    if (/(qwen|llama|mistral|yi-|glm-4-9b|7b|8b)/.test(s) && !/(qwen3|qwq|thinking|reason)/.test(s)) {
-      return { mode: 'none', levels: [], defaultLevel: 'off', note: '这类模型通常不能调思考深度' };
+    if (s.indexOf('grok') !== -1) {
+      return { mode: 'xai', levels: /4\.5/.test(s) ? ['auto', 'low', 'medium', 'high'] : ['auto', 'low', 'medium', 'high', 'xhigh'], defaultLevel: 'high', note: 'grok 推理模型用 reasoning_effort，不能关闭' };
     }
-    return { mode: 'openai_effort', levels: ['off', 'auto', 'low', 'high'], defaultLevel: 'low', note: '按 OpenAI reasoning_effort 发送；不支持时发送后会自动去掉重试' };
+    if (s.indexOf('kimi') !== -1) {
+      return s.indexOf('k2') !== -1
+        ? { mode: 'kimi', levels: ['off', 'on'], defaultLevel: 'on', note: 'K2 系用 thinking 开关' }
+        : { mode: 'kimi', levels: ['auto', 'low', 'high', 'max'], defaultLevel: 'max', note: 'Kimi K3 reasoning_effort，不能关闭' };
+    }
+    if (s.indexOf('glm') !== -1) {
+      return { mode: 'zhipu', levels: ['low', 'high', 'max'], defaultLevel: 'max', note: 'GLM 默认 max，不能关闭' };
+    }
+    if (s.indexOf('qwen') !== -1 || s.indexOf('qwq') !== -1) {
+      return { mode: 'qwen_thinking', levels: ['off', 'auto', 'low', 'medium', 'high'], defaultLevel: 'auto', note: '通义千问 enable_thinking' };
+    }
+    if (s.indexOf('doubao') !== -1 || s.indexOf('seed') !== -1) {
+      return { mode: 'ark', levels: ['off', 'auto', 'low', 'medium', 'high'], defaultLevel: 'auto', note: '豆包 thinking / reasoning_effort' };
+    }
+    if (/^gpt-6/.test(s) || s.indexOf('gpt-6') !== -1) {
+      var noOff = /astra|sol/.test(s);
+      return { mode: 'openai_effort', levels: noOff ? ['low', 'medium', 'high', 'xhigh', 'max'] : ['off', 'auto', 'low', 'medium', 'high', 'xhigh', 'max'], defaultLevel: 'medium', note: 'OpenAI reasoning effort' };
+    }
+    if (/^gpt-5/.test(s)) {
+      return { mode: 'openai_effort', levels: ['off', 'auto', 'low', 'medium', 'high'], defaultLevel: 'auto', note: 'gpt-5：off 映射 minimal' };
+    }
+    return { mode: 'none', levels: [], defaultLevel: 'off', note: '未识别的模型：默认不带思考参数（只保留自动）' };
   }
   function newModelFromId(providerId, modelId) {
     var reasoning = defaultReasoningFor(modelId);
@@ -4014,7 +4937,7 @@
   function setConnResult(kind, msg, detail) {
     var box = document.getElementById('connResult');
     if (!box) return;
-    box.className = 'test-state ' + (kind === 'ok' ? 'is-ok' : 'is-fail');
+    box.className = 'test-state ' + (kind === 'ok' ? 'is-ok' : kind === 'wait' ? 'is-wait' : 'is-fail');
     var text = document.getElementById('connResultText');
     if (text) text.textContent = msg;
     var det = document.getElementById('connResultDetail');
@@ -4024,27 +4947,43 @@
     var p = findProvider(providerDetailId);
     if (!p) return;
     collectProviderForm(p);
-    save();
     openSheet('connTest');
+    if (SERVER_MODE && serverOnline) {
+      setConnResult('wait', '正在让服务器替你去连…最多等 8 秒', '请求由后端发出，界面不显示 Key');
+      var saved = pendingProviderKey;
+      var chain = Promise.resolve();
+      if (saved) {
+        pendingProviderKey = null;
+        chain = serverFetch('/providers/' + encodeURIComponent(p.id) + '/key', { method: 'POST', body: { apiKey: saved } }).then(function () {
+          p.hasKey = true;
+        });
+      }
+      chain.then(function () {
+        save();
+        return serverFetch('/providers/' + encodeURIComponent(p.id) + '/test', { method: 'POST' });
+      }).then(function (data) {
+        var detail = (data.url || '') + (data.status ? ' · HTTP ' + data.status : '') + (data.ms ? ' · ' + data.ms + 'ms' : '');
+        setConnResult(data.ok ? 'ok' : 'fail', data.message || (data.ok ? '连上了。' : '没连上。'), detail);
+      }).catch(function (err) {
+        setConnResult('fail', err.message || '没连上。', '分类：' + errorKindLabel(err.kind || 'network'));
+      });
+      return;
+    }
     var target = apiUrl(p, 'models');
     var t0 = Date.now();
-    window.__a2lastTest = { state: 'pending', url: target };
     fetchWithTimeout(target, { method: 'GET', headers: authHeaders(p) }, 8000).then(function (res) {
       var ms = Date.now() - t0;
       if (!res.ok) {
         var c = classifyApiError(null, res.status);
         setConnResult('fail', c.message, 'HTTP ' + res.status + ' · ' + ms + 'ms · ' + target);
-        window.__a2lastTest = { state: 'fail', kind: c.kind, message: c.message, status: res.status, url: target };
         return;
       }
       return res.text().then(function () {
         setConnResult('ok', '连上了：这家能正常响应。', 'HTTP ' + res.status + ' · ' + ms + 'ms · ' + target);
-        window.__a2lastTest = { state: 'ok', kind: 'ok', message: '连上了', status: res.status, url: target };
       });
     }).catch(function (err) {
       var c = classifyApiError(err, null);
       setConnResult('fail', c.message, '分类：' + errorKindLabel(c.kind) + ' · ' + target);
-      window.__a2lastTest = { state: 'fail', kind: c.kind, message: c.message, url: target };
     });
   }
   function queryBalance(providerId, silent) {
@@ -4052,7 +4991,28 @@
     if (!p) return;
     var proto = protocolOf(p);
     if (!proto.balance) { if (!silent) toast('这家不支持查询余额。'); return; }
-    if (!p.apiKey) { if (!silent) toast('先填 API Key，再查余额。'); return; }
+    if (!providerHasKey(p)) { if (!silent) toast('先填 API Key，再查余额。'); return; }
+    if (SERVER_MODE && serverOnline) {
+      serverFetch('/providers/' + encodeURIComponent(providerId) + '/balance', { method: 'POST' }).then(function (data) {
+        p.balance = {
+          supported: data.supported !== false,
+          amount: data.amount,
+          currency: data.currency || '¥',
+          at: data.at || '',
+          failed: !!data.failed,
+          failKind: data.failKind || ''
+        };
+        save();
+        refreshAfterBalance();
+        if (!silent) toast(data.amount === null || data.amount === undefined ? '余额暂不可查。' : '余额已更新。');
+      }).catch(function () {
+        p.balance = { supported: true, amount: null, currency: (p.balance && p.balance.currency) || '¥', at: '', failed: true, failKind: 'network' };
+        save();
+        refreshAfterBalance();
+        if (!silent) toast('余额暂不可查。');
+      });
+      return;
+    }
     var url = String(p.baseUrl || '').replace(/\/+$/, '') + (proto.balancePath || '');
     fetchWithTimeout(url, { method: 'GET', headers: authHeaders(p) }, 8000).then(function (res) {
       if (!res.ok) { var e = new Error('http'); e.status = res.status; throw e; }
@@ -4095,7 +5055,9 @@
     { id: 'onoff', levels: ['off', 'on'] },
     { id: 'four', levels: ['off', 'auto', 'low', 'high'] },
     { id: 'five', levels: ['off', 'auto', 'low', 'medium', 'high'] },
-    { id: 'six', levels: ['off', 'auto', 'low', 'medium', 'high', 'max'] }
+    { id: 'six', levels: ['off', 'auto', 'low', 'medium', 'high', 'max'] },
+    { id: 'seven', levels: ['off', 'auto', 'low', 'medium', 'high', 'xhigh', 'max'] },
+    { id: 'effort', levels: ['low', 'medium', 'high', 'xhigh', 'max'] }
   ];
   function matchLevelPreset(levels) {
     var key = (levels || []).join(',');
@@ -4278,6 +5240,16 @@
     var onlyId = exportTarget;
     var list = onlyId ? [findProvider(onlyId)].filter(Boolean) : state.providers;
     if (!list.length) { toast('还没有可导出的提供商。'); return; }
+    var name = onlyId ? list[0].name : (list.length + '个提供商');
+    if (SERVER_MODE && serverOnline) {
+      var path = '/providers/export?includeApiKey=' + (exportIncludeKey ? '1' : '0') + (onlyId ? '&id=' + encodeURIComponent(onlyId) : '');
+      serverDownload(path).then(function (blob) {
+        downloadBlob('缪诗鸳杞-模型提供商-' + name + '.json', blob);
+        closeSheet();
+        toast(exportIncludeKey ? '已导出（含 API Key，注意保管）。' : '已导出（不含 API Key）。');
+      }).catch(apiToast);
+      return;
+    }
     var modelIds = {};
     list.forEach(function (p) { (p.models || []).forEach(function (mid) { modelIds[mid] = 1; }); });
     var models = state.models.filter(function (m) { return modelIds[m.id]; }).map(function (m) { return clone(m); });
@@ -4291,7 +5263,6 @@
       exportedAt: new Date().toISOString(), includeApiKey: !!exportIncludeKey,
       providers: providers, models: models
     };
-    var name = onlyId ? list[0].name : (list.length + '个提供商');
     downloadText('缪诗鸳杞-模型提供商-' + name + '.json', JSON.stringify(payload, null, 2));
     closeSheet();
     toast(exportIncludeKey ? '已导出（含 API Key，注意保管）。' : '已导出（不含 API Key）。');
@@ -4323,7 +5294,7 @@
         copy.apiKey = '';
         copy.source = 'imported';
         copy.enabled = copy.enabled !== false;
-        copy.advanced = copy.advanced || { responseApi: false, returnThinking: true, fetchBalance: false, demo400: false, timeout: 45 };
+        copy.advanced = copy.advanced || { responseApi: false, returnThinking: true, fetchBalance: false, timeout: 45 };
         copy.balance = copy.balance || { supported: false, amount: 0, currency: '¥', at: '' };
         copy.models = (copy.models || []).map(function (mid) { return idMap[mid] || mid; }).filter(function (mid) { return !!findModel(mid); });
         state.providers.push(copy);
@@ -4486,6 +5457,7 @@
       title: '聊天菜单',
       body: '<div class="menu-list">' +
         row('data-a2="preview-open"', '<svg viewBox="0 0 20 20" fill="none"><path d="M4 4.6h12v9.8H9.6L6 17.4v-3H4z"/><path d="M7 8h6M7 10.6h3.6"/></svg>', '查看这次发给模型的内容', '按真实顺序拼好的提示词预览') +
+        row('data-action="remember-last"', '<svg viewBox="0 0 20 20" fill="none"><path d="M4 4.6h12v9.8H9.6L6 17.4v-3H4z"/><path d="M7 8h6M7 10.6h3.6"/></svg>', '记住这句话', '把最后一条回复收进记忆库') +
         row('data-open="presetSwitch"', '<svg viewBox="0 0 20 20" fill="none"><path d="M5.4 3.6h9.2c.8 0 1.4.6 1.4 1.4v10c0 .8-.6 1.4-1.4 1.4H5.4c-.8 0-1.4-.6-1.4-1.4V5c0-.8.6-1.4 1.4-1.4z"/><path d="M7.2 7h5.6M7.2 10h5.6M7.2 13h3.4"/></svg>', '提示词预设 · 这场文风', '换文风，或设为角色默认') +
         row('data-open="chatBook"', '<svg viewBox="0 0 20 20" fill="none"><path d="M4.4 4.6h5.2c.7 0 1.2.5 1.2 1.2v9.6H5.6c-.7 0-1.2-.5-1.2-1.2V4.6z"/><path d="M15.6 4.6h-5.2c-.7 0-1.2.5-1.2 1.2v9.6h5.2c-.7 0-1.2-.5-1.2-1.2V4.6z"/></svg>', '这场聊天的世界书', '常开与关键词') +
         row('data-open="characterSwitch"', '<svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="3.1"/><path d="M4.4 16.2c.8-3 3-4.6 5.6-4.6s4.8 1.6 5.6 4.6"/></svg>', '换个角色', '去和另一个人说话') +
@@ -4520,11 +5492,6 @@
       '<span class="a2-tag a2-tag--muted">默认 ' + esc(REASON_TEXT[reasoningDefaultLevel(m)] || '关') + '</span></div>';
     body += '<p class="sheet-label">这次请求里会带</p><div class="reason-params">' + esc(reasoningParamsPreview(m, cur)) + '</div>';
     body += '<p class="a2-note">' + esc((m.reasoning && m.reasoning.note) || '') + '</p>';
-    var provider = providerOf(m);
-    if (provider && provider.advanced && provider.advanced.demo400 && cur !== 'off') {
-      body += '<div class="a2-banner a2-banner--warn">' + IC_INFO_A2 +
-        '<span>样稿演示：这家会对思考参数返回 400。发送消息时会自动去掉思考参数重试一次，并在回复下方用小字说明，聊天不会失败。</span></div>';
-    }
     if (reasonPending) {
       var same = reasonPending === reasoningDefaultLevel(m);
       body += '<div class="ask-card" style="margin-top:12px">' +
@@ -4552,8 +5519,6 @@
     save();
     updateThinkCap();
     openSheet('reasoning');
-    var built = buildReasoningParams(m, level);
-    window.__a2lastReasoningChoice = { modelId: m.id, level: level, params: built.params };
   }
   function setReasoningAsDefault() {
     var m = currentModel();
@@ -4986,6 +5951,18 @@
 
   /* ---------------- 预设：导入 / 导出 ---------------- */
   function handlePresetFile(file) {
+    if (SERVER_MODE && serverOnline) {
+      readFileText(file).then(function (text) {
+        var raw = tryParseJson(text);
+        if (!raw) { toast('这不是一份能读的预设文件。'); return; }
+        serverFetch('/presets/import', { method: 'POST', body: { payload: raw } }).then(function (data) {
+          if (data && data.preset) presetDetailId = data.preset.id;
+          toast((data && data.note) ? ('已导入。' + data.note) : '预设已导入。');
+          return refreshFromServer();
+        }).catch(apiToast);
+      }).catch(function () { toast('文件打不开，换一份再试试。'); });
+      return;
+    }
     readFileText(file).then(function (text) {
       var raw = tryParseJson(text);
       if (!raw) { toast('这不是一份能读的预设文件。'); return; }
@@ -5091,12 +6068,26 @@
   function exportPreset(id) {
     var p = findPreset(id);
     if (!p) return;
+    if (SERVER_MODE && serverOnline) {
+      serverDownload('/presets/' + encodeURIComponent(id) + '/export').then(function (blob) {
+        downloadBlob('缪诗鸳杞-提示词预设-' + p.name + '.json', blob);
+        toast('预设已导出。');
+      }).catch(apiToast);
+      return;
+    }
     downloadText('缪诗鸳杞-提示词预设-' + p.name + '.json', JSON.stringify({
       app: 'miushi-yuanqi', kind: 'prompt_preset', version: 1, preset: clone(p)
     }, null, 2));
     toast('预设已导出。');
   }
   function exportAllPresets() {
+    if (SERVER_MODE && serverOnline) {
+      serverDownload('/presets/export').then(function (blob) {
+        downloadBlob('缪诗鸳杞-提示词预设-全部.json', blob);
+        toast('全部预设已导出。');
+      }).catch(apiToast);
+      return;
+    }
     downloadText('缪诗鸳杞-提示词预设-全部.json', JSON.stringify({
       app: 'miushi-yuanqi', kind: 'prompt_presets', version: 1,
       presets: state.promptPresets.map(function (p) { return clone(p); })
@@ -5188,15 +6179,16 @@
       }
     };
   }
-  SHEETS.previewPrompt = function () {
-    var out = assemblePrompt({});
+  function promptPreviewHtml(out, fromServer) {
+    var meta = out.meta || {};
+    var blocks = out.blocks || [];
     var html = '<div class="preview-stats">' +
-      '<span class="a2-tag">模型 · ' + esc(out.meta.model) + '</span>' +
-      '<span class="a2-tag">文风 · ' + esc(out.meta.preset) + '</span>' +
-      '<span class="a2-tag a2-tag--muted">' + out.blocks.length + ' 段 · 约 ' + fmtNum(out.tokens) + ' tok</span>' +
+      '<span class="a2-tag">模型 · ' + esc(meta.model || '未选') + '</span>' +
+      '<span class="a2-tag">文风 · ' + esc(meta.preset || '默认') + '</span>' +
+      '<span class="a2-tag a2-tag--muted">' + blocks.length + ' 段 · 约 ' + fmtNum(out.tokens || 0) + ' tok</span>' +
     '</div>';
     var chatCount = 0;
-    out.blocks.forEach(function (b) {
+    blocks.forEach(function (b) {
       if (b.kind === 'chat') {
         chatCount += 1;
         var text = String(b.text || '');
@@ -5209,15 +6201,52 @@
           '<span class="preview-block__role">' + esc(b.role || '') + '</span></div>' +
         '<p class="preview-block__text">' + esc(b.text || '（空）') + '</p></div>';
     });
+    var banner = fromServer
+      ? '<span>这是后端真正会发给模型的内容：预设前置 → 角色设定 → 世界书（常开 + 关键词命中）→ 用户设定 → 现在卡与记忆 → 聊天记录（含深度注入）→ 预设后置 → 当前用户句。世界书按预算裁过。</span>'
+      : '<span>离线模式：用当前本地状态拼装，顺序与后端一致；连上后端后会显示服务器拼装结果。</span>';
     return {
       title: '这次发给模型的内容',
-      body: '<div class="a2-banner">' + IC_INFO_A2 +
-          '<span>顺序：预设前置 → 角色设定 → 世界书 → 用户设定 → 聊天记录（含深度注入）→ 预设后置。样稿用当前聊天的假数据拼装。</span></div>' +
-        html +
-        '<p class="a2-note">一共 ' + chatCount + ' 条聊天记录。真正发送时后端还会按预算裁掉超出的部分。</p>',
-      foot: '<button class="btn" type="button" data-close>知道了</button>'
+      body: '<div class="a2-banner">' + IC_INFO_A2 + banner + '</div>' + html +
+        '<p class="a2-note">一共 ' + chatCount + ' 条聊天记录。</p>'
+    };
+  }
+  SHEETS.previewPrompt = function () {
+    var content = promptPreviewHtml(assemblePrompt({}), false);
+    content.foot = '<button class="btn" type="button" data-close>知道了</button>';
+    return content;
+  };
+  SHEETS.previewLoading = function () {
+    return {
+      title: '这次发给模型的内容',
+      body: '<p class="a2-sub">正在向后端要拼装结果…</p>',
+      foot: '<button class="btn" type="button" data-close>取消</button>'
     };
   };
+  SHEETS.previewServer = function (payload) {
+    var content = promptPreviewHtml(payload || {}, true);
+    var reasoning = payload && payload.reasoning;
+    var reasoningLine = '';
+    if (reasoning) {
+      reasoningLine = '<p class="a2-note">思考档位：' + esc((middleReasonText(reasoning.level))) + ' · ' +
+        (reasoning.params ? esc(JSON.stringify(reasoning.params)) : '这次请求里不带思考参数') + '</p>';
+    }
+    content.body += reasoningLine;
+    content.foot = '<button class="btn" type="button" data-close>知道了</button>';
+    return content;
+  };
+  function middleReasonText(level) {
+    var map = { off: '关闭', auto: '自动', low: '低', medium: '中', high: '高', max: '最高', on: '开启' };
+    return map[level] || '关闭';
+  }
+  function openPromptPreview() {
+    var char = currentChar();
+    if (!char) { toast('先选一位角色。'); return; }
+    if (!serverOnline) { openSheet('previewPrompt'); return; }
+    openSheet('previewLoading');
+    serverFetch('/chats/' + encodeURIComponent(char.id) + '/prompt-preview').then(function (data) {
+      openSheet('previewServer', data);
+    }).catch(function (err) { closeSheet(); apiToast(err); });
+  }
 
   /* ---------------- 统计页 ---------------- */
   var CURRENCY_RATE = 7.1;
@@ -5557,36 +6586,241 @@
       '<p class="a2-note" style="text-align:left">总消息数按 usage 记录与本地聊天粗算；每条记录都带提供商 + 模型 ID + 显示名，旧数据缺信息时归到「未标记」并在这里说明。本次范围里未标记 0 条。</p>' +
     '</div>';
   }
+  /* ---------- B 阶段：统计页数字全部来自后端 usage 表 ---------- */
+  var statsServerData = null;
+  var statsLoading = false;
+
   function renderStats() {
+    var box = document.getElementById('statsScroll');
+    if (!box) return;
+    if (!SERVER_MODE || !serverOnline) { renderStatsLocal(); return; }
+    if (statsServerData) {
+      renderStatsServer(statsServerData, true);
+    } else {
+      box.innerHTML = statsRangeChips() + '<div class="a2-card"><p class="a2-sub">正在从服务器汇总 usage…</p></div>';
+    }
+    loadServerStats();
+  }
+
+  function loadServerStats() {
+    if (statsLoading) return;
+    statsLoading = true;
+    serverFetch('/stats?range=' + encodeURIComponent(statsRange) + '&metric=' + encodeURIComponent(statsMetric) + '&rank=' + encodeURIComponent(rankTab)).then(function (data) {
+      statsLoading = false;
+      statsServerData = data;
+      renderStatsServer(data, true);
+    }).catch(function (err) {
+      statsLoading = false;
+      var box = document.getElementById('statsScroll');
+      if (box) box.innerHTML = statsRangeChips() + '<div class="a2-card"><p class="a2-sub">统计没加载出来：' + esc(err.message) + '</p></div>';
+    });
+  }
+
+  function renderStatsServer(data, keepScroll) {
+    var box = document.getElementById('statsScroll');
+    if (!box) return;
+    var top = keepScroll ? box.scrollTop : 0;
+    box.innerHTML = statsRangeChips() +
+      '<div class="a2-banner">' + IC_INFO_A2 +
+        '<span>每条记录由服务器从 API 的 usage 字段写入 SQLite 的 usage 表（输入 / 缓存 / 输出 / 耗时 / 是否出错 / 是否估算），统计页只从这里汇总。余额卡来自提供商缓存。</span></div>' +
+      statsServerHero(data.overview, data.rangeLabel) +
+      heatmapServerHtml(data.heatmap) +
+      chartServerHtml(data) +
+      rankServerHtml(data.rank) +
+      balanceServerHtml(data.balance) +
+      liteServerHtml(data.lite, data.overview);
+    box.scrollTop = top;
+    var hm = document.getElementById('heatmap');
+    if (hm) hm.scrollLeft = hm.scrollWidth;
+  }
+
+  function statsServerHero(agg, rangeLabel) {
+    agg = agg || {};
+    var main = statsMetric === 'cost' ? fmtCost(agg.cost) : fmtTok((agg.prompt || 0) + (agg.output || 0));
+    var note = '花费 = 各类 token × 模型单价；美元按 ¥' + (agg.currencyRate || CURRENCY_RATE) + ' / $ 折算。';
+    if (agg.estimatedCount) note += ' 其中 ' + agg.estimatedCount + ' 条是拿不到 usage 时按字数估算的。';
+    return '<div class="a2-card">' +
+      '<div class="a2-card__head"><span class="label">' + esc(rangeLabel || '') + '总览</span></div>' +
+      '<p class="reason-current" style="font-size:30px;letter-spacing:.02em">' + main + '<span style="font-family:var(--sans);font-size:10px;color:var(--text-3);margin-left:6px">' + (statsMetric === 'cost' ? '估算花费' : 'token') + '</span></p>' +
+      '<div class="stats-overview" style="margin-top:12px">' +
+        '<div class="stat-cell"><b class="stat-cell__num">' + fmtTok(agg.prompt) + '</b><span class="stat-cell__label">输入 Token</span></div>' +
+        '<div class="stat-cell"><b class="stat-cell__num">' + fmtTok(agg.output) + '</b><span class="stat-cell__label">输出 Token</span></div>' +
+        '<div class="stat-cell"><b class="stat-cell__num">' + fmtTok(agg.cache) + '</b><span class="stat-cell__label">缓存命中 Token</span></div>' +
+        '<div class="stat-cell"><b class="stat-cell__num">' + (Number(agg.hitRate || 0) * 100).toFixed(1) + '<small>%</small></b><span class="stat-cell__label">缓存命中率</span></div>' +
+        '<div class="stat-cell stat-cell--wide"><b class="stat-cell__num">' + fmtCost(agg.cost) + '</b><span class="stat-cell__label">估算花费 · 按模型单价折算' + (agg.unpricedCount ? '（' + agg.unpricedCount + ' 个模型未设单价，未计入）' : '') + '</span></div>' +
+        '<div class="stat-cell"><b class="stat-cell__num">' + fmtNum(agg.count || 0) + '</b><span class="stat-cell__label">请求次数</span></div>' +
+        '<div class="stat-cell"><b class="stat-cell__num">' + fmtMs(agg.avgMs || 0) + '</b><span class="stat-cell__label">平均每次回复用时</span></div>' +
+      '</div>' +
+      '<p class="a2-note" style="text-align:left">' + esc(note) + '</p>' +
+    '</div>';
+  }
+
+  function heatmapServerHtml(hm) {
+    var cells = (hm && hm.cells) || [];
+    var out = cells.map(function (cell) {
+      var md = '';
+      var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(cell.date || '');
+      if (m) md = (+m[2]) + '月' + (+m[3]) + '日';
+      return '<i class="heat-cell" data-l="' + (cell.level || 0) + '" title="' + esc(md + ' · ' + (cell.count || 0) + ' 条') + '"></i>';
+    }).join('');
+    return '<div class="a2-card">' +
+      '<div class="a2-card__head"><span class="label">聊天热力图 · 近一年</span><span class="a2-sub">颜色越深，请求越多</span></div>' +
+      '<div class="heatmap-wrap"><div class="heatmap" id="heatmap">' + out + '</div></div>' +
+      '<div class="heat-legend"><span>少</span><i data-l="0"></i><i data-l="1"></i><i data-l="2"></i><i data-l="3"></i><i data-l="4"></i><span>多</span></div>' +
+      '<p class="a2-note" style="text-align:left">按天统计 usage 记录条数（近 365 天），可以左右滑。</p>' +
+    '</div>';
+  }
+
+  function chartServerHtml(data) {
+    var chart = data.chart || { mode: 'day', buckets: [] };
+    var buckets = chart.buckets || [];
+    var agg = data.overview || {};
+    var maxV = 0;
+    buckets.forEach(function (b) {
+      if ((b.value || 0) > maxV) maxV = b.value || 0;
+    });
+    var step = Math.max(1, Math.ceil(buckets.length / 10));
+    var bars = buckets.map(function (b, i) {
+      var label = chart.mode === 'hour' ? (b.label || '') : ((i % step === 0 || i === buckets.length - 1) ? (b.label || '') : '');
+      var inner;
+      if (statsMetric === 'cost') {
+        inner = '<i class="chart-seg chart-seg--cost" style="height:' + (maxV ? Math.max(1, (b.value || 0) / maxV * 100) : 0).toFixed(1) + '%"></i>';
+      } else {
+        var hIn = maxV ? Math.max((b.prompt || 0) - (b.cache || 0), 0) / maxV * 100 : 0;
+        var hCache = maxV ? (b.cache || 0) / maxV * 100 : 0;
+        var hOut = maxV ? (b.output || 0) / maxV * 100 : 0;
+        inner = '<i class="chart-seg chart-seg--out" style="height:' + hOut.toFixed(1) + '%"></i>' +
+          '<i class="chart-seg chart-seg--cache" style="height:' + hCache.toFixed(1) + '%"></i>' +
+          '<i class="chart-seg chart-seg--in" style="height:' + hIn.toFixed(1) + '%"></i>';
+      }
+      return '<div class="chart-col" title="' + esc(b.key || '') + '"><div class="chart-stack">' + inner + '</div></div>';
+    }).join('');
+    var labels = buckets.map(function (b, i) {
+      var text = chart.mode === 'hour' ? '' : ((i % step === 0 || i === buckets.length - 1) ? (b.label || '') : '');
+      return '<span>' + esc(text) + '</span>';
+    }).join('');
+    var empty = buckets.length ? '' : '<p class="a2-sub">这个范围还没有记录。</p>';
+    return '<div class="a2-card">' +
+      '<div class="chart-top"><span class="label">' + (chart.mode === 'month' ? '每月用量' : chart.mode === 'hour' ? '今天各小时' : '每日用量') + '</span>' +
+        '<div class="metric-toggle" role="group" aria-label="统计口径">' +
+          '<button class="' + (statsMetric === 'token' ? 'is-on' : '') + '" type="button" data-a2="stats-metric" data-value="token">按 Token</button>' +
+          '<button class="' + (statsMetric === 'cost' ? 'is-on' : '') + '" type="button" data-a2="stats-metric" data-value="cost">按花费</button>' +
+        '</div></div>' +
+      '<div class="chart-bars">' + bars + '</div>' +
+      '<div class="chart-labels">' + labels + '</div>' +
+      '<div class="chart-legend">' +
+        '<span><i class="chart-seg--in"></i>输入</span><span><i class="chart-seg--cache"></i>缓存</span><span><i class="chart-seg--out"></i>输出</span>' +
+      '</div>' + empty +
+      '<div class="chart-sum" style="margin-top:8px"><span class="a2-sub">本期总计</span><b>' + (statsMetric === 'cost' ? fmtCost(agg.cost) : fmtTok((agg.prompt || 0) + (agg.output || 0))) + '</b></div>' +
+      '<p class="a2-sub" style="margin-top:2px">输入 ' + fmtTok((agg.prompt || 0) - (agg.cache || 0)) + ' · 缓存 ' + fmtTok(agg.cache) + ' · 输出 ' + fmtTok(agg.output) + '</p>' +
+    '</div>';
+  }
+
+  function rankServerHtml(rank) {
+    var items = (rank && rank.items) || [];
+    var tab = (rank && rank.tab) || rankTab;
+    var max = items.length ? items[0].tokens : 1;
+    var rows = items.length ? items.map(function (it) {
+      var icon = '<span class="p-icon p-icon--sm p-icon--letter">·</span>';
+      if (tab === 'provider') {
+        var p = findProvider(it.key);
+        if (p) icon = providerIconHTML(p, 'p-icon--sm');
+      } else if (tab === 'char') {
+        var c = findChar(it.key);
+        icon = avatarHTML(c || { name: '·' }, 'avatar avatar--ai av-xxs');
+      } else {
+        var m = findModel(it.key);
+        if (m) icon = modelIconHTML(m, 'p-icon--sm');
+      }
+      return '<div class="rank-row"><span class="rank-row__icon">' + icon + '</span>' +
+        '<span class="rank-row__main">' +
+          '<span class="rank-row__top"><span class="rank-row__name">' + esc(it.label || '未标记') + '</span>' +
+            '<span class="rank-row__num">' + fmtNum(it.count || 0) + ' 次</span></span>' +
+          '<span class="rank-bar"><i style="width:' + (max ? (it.tokens / max * 100).toFixed(1) : 0) + '%"></i></span>' +
+        '</span><span class="rank-row__pct">' + Number(it.pct || 0).toFixed(1) + '%</span></div>';
+    }).join('') : '<p class="a2-empty">这个范围还没有记录。</p>';
+    return '<div class="a2-card">' +
+      '<div class="a2-card__head"><span class="label">排行</span></div>' +
+      '<div class="rank-tabs" role="group" aria-label="排行维度">' +
+        '<button class="' + (tab === 'model' ? 'is-on' : '') + '" type="button" data-a2="rank-tab" data-value="model">按模型</button>' +
+        '<button class="' + (tab === 'provider' ? 'is-on' : '') + '" type="button" data-a2="rank-tab" data-value="provider">按提供商</button>' +
+        '<button class="' + (tab === 'char' ? 'is-on' : '') + '" type="button" data-a2="rank-tab" data-value="char">按角色</button>' +
+      '</div><div class="rank-list">' + rows + '</div>' +
+      '<p class="a2-note" style="text-align:left">百分比按 token 占比算，条数是请求次数。每条记录都带提供商 + 模型 ID + 显示名，不会出现「未知模型」。</p>' +
+    '</div>';
+  }
+
+  function balanceServerHtml(items) {
+    items = items || [];
+    var rows = items.map(function (b) {
+      var p = findProvider(b.providerId);
+      var amountHtml;
+      if (!b.supported) {
+        amountHtml = '<span class="balance-row__amt is-muted"><b>这家不支持查询</b><span></span></span>';
+      } else if (b.amount || b.amount === 0) {
+        amountHtml = '<span class="balance-row__amt"><b>' + esc(b.currency || '¥') + Number(b.amount).toFixed(2) + '</b><span>' + esc(b.at || '') + '</span></span>';
+      } else {
+        amountHtml = '<span class="balance-row__amt is-muted"><b>余额暂不可查</b><span></span></span>';
+      }
+      return '<div class="balance-row">' + (p ? providerIconHTML(p, 'p-icon--sm') : '') +
+        '<span class="balance-row__main"><span class="balance-row__name">' + esc(b.name) + '</span>' +
+          '<span class="balance-row__time">' + (b.supported ? '由后端查询并缓存 5 分钟' : '这家不支持查询余额') + '</span></span>' +
+        amountHtml +
+        (b.supported ? '<button class="balance-row__refresh" type="button" data-a2="bal-query" data-id="' + esc(b.providerId) + '" aria-label="查询余额">' + IC_REFRESH_A2 + '</button>' : '') +
+      '</div>';
+    }).join('');
+    return '<div class="a2-card">' +
+      '<div class="a2-card__head"><span class="label">余额</span><span class="a2-sub">只有官方接口支持的类型能查</span></div>' +
+      '<div class="balance-list">' + (rows || '<p class="a2-empty">还没有提供商。</p>') + '</div>' +
+      '<p class="a2-note" style="text-align:left">查询失败时不弹英文报错，只显示「余额暂不可查」。</p>' +
+    '</div>';
+  }
+
+  function liteServerHtml(lite, overview) {
+    lite = lite || {};
+    var note = '总对话数与总消息数来自 SQLite；每条 usage 都带提供商 + 模型 ID + 显示名。';
+    if (overview && overview.estimatedCount) note += ' 本次范围里 ' + overview.estimatedCount + ' 条为估算。';
+    return '<div class="a2-card">' +
+      '<div class="stat-grid-3">' +
+        '<div class="stat-mini"><b>' + fmtNum(lite.conversations || 0) + '</b><span>总对话数</span></div>' +
+        '<div class="stat-mini"><b>' + fmtNum(lite.messages || 0) + '</b><span>总消息数</span></div>' +
+        '<div class="stat-mini"><b>' + fmtNum(lite.daysTogether || 1) + '</b><span>在一起天数</span></div>' +
+      '</div>' +
+      '<p class="a2-note" style="text-align:left">' + esc(note) + '</p>' +
+    '</div>';
+  }
+
+  function renderStatsLocal() {
     var box = document.getElementById('statsScroll');
     if (!box) return;
     var records = rangeRecords(statsRange);
     var agg = aggregateUsage(records);
     var rangeObj = STATS_RANGES.filter(function (r) { return r.id === statsRange; })[0] || STATS_RANGES[1];
-    var body =
-      statsRangeChips() +
+    box.innerHTML = statsRangeChips() +
       '<div class="a2-banner">' + IC_INFO_A2 +
-        '<span>每次回复由服务器从 API 的 usage 字段记一条（输入 / 缓存 / 输出 / 耗时），统计页从这里汇总。样稿用约 60 天、4 个模型、3 个角色的假数据。</span></div>' +
+        '<span>离线模式：用浏览器里的演示数据展示统计页样式。连上本机后端后，这里会变成 usage 表里的真实数据。</span></div>' +
       statsHero(agg, rangeObj.label) +
       heatmapHtml() +
       chartHtml(records, agg) +
       rankHtml(records) +
       balanceHtml() +
       statsLiteHtml();
-    box.innerHTML = body;
     var hm = document.getElementById('heatmap');
     if (hm) hm.scrollLeft = hm.scrollWidth;
   }
   function setStatsRange(range) {
     statsRange = range;
+    statsServerData = null;
     renderStats();
   }
   function setStatsMetric(metric) {
     statsMetric = metric;
+    statsServerData = null;
     renderStats();
   }
   function setRankTab(tab) {
     rankTab = tab;
+    statsServerData = null;
     renderStats();
   }
 
@@ -5656,6 +6890,10 @@
       return;
     }
     if (kind === 'key-eye') {
+      if (SERVER_MODE && serverOnline) {
+        toast('Key 加密保存在服务器，界面只能看到掩码；要换就在输入框里直接输入新的。');
+        return;
+      }
       var keyEl = document.getElementById('provKey');
       var prov = findProvider(providerDetailId);
       if (!keyEl || !prov) return;
@@ -5687,7 +6925,7 @@
     if (kind === 'reason-level') { selectReasoningLevel(value); return; }
     if (kind === 'reason-default') { setReasoningAsDefault(); return; }
     if (kind === 'reason-dismiss') { dismissReasonAsk(); return; }
-    if (kind === 'preview-open') { openSheet('previewPrompt'); return; }
+    if (kind === 'preview-open') { openPromptPreview(); return; }
     if (kind === 'bal-query') { queryBalance(id); return; }
     if (kind === 'export-provider') {
       exportTarget = id;
@@ -5777,27 +7015,6 @@
     return false;
   }
 
-  /* 给样稿自查脚本用的内部入口（不影响界面） */
-  window.__a2 = {
-    getState: function () { return state; },
-    buildReasoningParams: buildReasoningParams,
-    classifyApiError: classifyApiError,
-    assemblePrompt: assemblePrompt,
-    aggregateUsage: aggregateUsage,
-    rangeRecords: rangeRecords,
-    fmtTok: fmtTok,
-    fmtCost: fmtCost,
-    findModel: findModel,
-    findProvider: findProvider,
-    currentModel: currentModel,
-    resolvedPreset: resolvedPreset,
-    reasoningLevels: reasoningLevels,
-    chatReasoningLevel: chatReasoningLevel,
-    queryBalance: queryBalance,
-    save: save,
-    DATA: DATA
-  };
-
   /* ---------------- 启动 ---------------- */
   var clockTimer = null;
   function tickClock() {
@@ -5844,13 +7061,13 @@
     document.documentElement.classList.toggle('perf-lite', lite);
   }
 
-  function boot() {
-    detectPerfLite();
+  var appStarted = false;
+
+  function startApplication() {
+    if (appStarted) { renderAfterServerRefresh(); return; }
+    appStarted = true;
     applyTheme(state.theme);
     tickClock();
-    clockTimer = setInterval(tickClock, 30000);
-    bindEvents();
-
     var entered = false;
     try { entered = sessionStorage.getItem(SESSION_KEY) === '1'; } catch (e) { entered = false; }
     var start = 'home';
@@ -5860,7 +7077,8 @@
 
     /* 先出壳，再在下一帧填数据，避免首屏阻塞 */
     requestAnimationFrame(function () {
-      chatMessages = ensureChat(state.currentCharacterId).messages;
+      var chat = ensureChat(state.currentCharacterId);
+      chatMessages = chat ? chat.messages : [];
       renderChat();
       updateChatHeader();
       renderMemories();
@@ -5873,14 +7091,80 @@
       if (start === 'chat') scrollChatBottom(false);
     });
 
+    if (state.settings.splashAlways) {
+      try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* 忽略 */ }
+    }
+  }
+
+  function bootLocalFallback(reason) {
+    serverOnline = false;
+    normalizeCollections();
+    startApplication();
+    if (reason) toast(reason);
+  }
+
+  function bindServerUi() {
+    var input = $('#loginPass');
+    if (input) input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); submitLogin(); }
+    });
+    var btn = $('#loginBtn');
+    if (btn) btn.addEventListener('click', submitLogin);
+  }
+
+  function loadServerApp() {
+    return serverFetch('/bootstrap').then(function (boot) {
+      serverInfo = boot.server || {};
+      authRequired = !!serverInfo.authRequired;
+      devMode = !!serverInfo.devMode;
+      usageSummary = boot.usage || null;
+      serverOnline = true;
+      applyServerState(boot.state);
+      hideLogin();
+      startApplication();
+      if (appStarted) renderAfterServerRefresh();
+      if (devMode) {
+        console.warn('开发模式：没有设置 APP_PASSWORD，本机任何程序都能访问这个服务。仅限本地开发使用。');
+      }
+      if (serverInfo.mockModel) toast('后端在演示模型模式（MSYQ_MOCK=1）：回复由本机生成，不请求外部接口。');
+      offerMigration();
+      return true;
+    });
+  }
+
+  function bootServer() {
+    serverFetch('/auth/me').then(function (me) {
+      authRequired = !!me.authRequired;
+      devMode = !!me.devMode;
+      if (authRequired && !me.authenticated) {
+        serverOnline = false;
+        showLogin();
+        return null;
+      }
+      return loadServerApp();
+    }).catch(function (err) {
+      bootLocalFallback('连不上本机后端，先用这台浏览器里的缓存：' + (err.message || ''));
+    });
+  }
+
+  function boot() {
+    detectPerfLite();
+    tickClock();
+    clockTimer = setInterval(tickClock, 30000);
+    bindEvents();
+    bindServerUi();
+
+    if (SERVER_MODE) {
+      bootServer();
+    } else {
+      serverOnline = false;
+      startApplication();
+    }
+
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) { stopHomeClock(); tickClock(); }
       else { tickClock(); startHomeClock(); }
     });
-
-    if (state.settings.splashAlways) {
-      try { sessionStorage.removeItem(SESSION_KEY); } catch (e) { /* 忽略 */ }
-    }
   }
 
   if (document.readyState === 'loading') {

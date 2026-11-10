@@ -1,0 +1,1200 @@
+{
+  "characters": [
+    {
+      "id": "miao",
+      "name": "缪诗",
+      "desc": "旧城小公寓里写字的她",
+      "description": "旧城北向的小公寓，夜里写字，白天种一点薄荷。说话慢，记性很好，习惯把重要的事放在很靠前的位置。喜欢福州下雨的声音。",
+      "personality": "温和、克制。不太会哄人，只会把灯留着。被问住的时候会先停一下，再把句子放轻。",
+      "scenario": "十一月，福州入秋。她刚把窗关上，雨还在下，灯已经开了。",
+      "first_mes": "你回来了。伞先放门边，别把水带进屋里。",
+      "mes_example": "<START>\n{{user}}：今天下课晚了。\n{{char}}：嗯，我听见楼下的门响。饭在锅里温着，先去洗手。\n<START>\n{{user}}：你会不会觉得我太慢。\n{{char}}：慢一点好。雨也是慢慢停的。",
+      "avatar": "",
+      "worldBookId": "wb-rain",
+      "defaultPersonaId": "persona-wu",
+      "defaultPresetId": "preset-prose",
+      "source": "preset",
+      "extras": {}
+    },
+    {
+      "id": "qi",
+      "name": "阿杞",
+      "desc": "另一种可能的她，话更少",
+      "description": "住在城南靠海的旧楼里，做校对。话少，句子短，习惯先听别人说完。",
+      "personality": "安静、直接，不擅长寒暄。喜欢海风，不喜欢被催。",
+      "scenario": "傍晚，海边风大。她把围巾分了一半过来，没说什么。",
+      "first_mes": "风大。站近一点。",
+      "mes_example": "<START>\n{{user}}：今天有点累。\n{{char}}：那就先不说话。我陪你站一会儿。",
+      "avatar": "",
+      "worldBookId": "wb-sea",
+      "defaultPersonaId": "",
+      "source": "preset",
+      "extras": {}
+    },
+    {
+      "id": "char-lin",
+      "name": "林雾",
+      "desc": "在城南旧书店整理书目的成年人",
+      "description": "三十岁，在旧书店做书目整理。说话慢，喜欢把书按颜色排一遍，再按年份排回去。",
+      "personality": "耐心，有一点固执，讲话轻。",
+      "scenario": "雨天的旧书店，打烊前最后一盏灯。",
+      "first_mes": "你来得正好，这本书刚被我放错架。",
+      "mes_example": "",
+      "avatar": "",
+      "worldBookId": "",
+      "defaultPersonaId": "",
+      "source": "sample-import",
+      "extras": {}
+    }
+  ],
+  "userPersonas": [
+    {
+      "id": "persona-wu",
+      "name": "芴",
+      "description": "法学院三年级，怕冷，走路慢。睡前要喝半杯温水，喜欢旧一点的歌，音量总比习惯小一格。\n\n有一个如果不说就会忘记的毛病，所以重要的话，会请缪诗替她记住。",
+      "avatar": "",
+      "is_default": true
+    },
+    {
+      "id": "persona-cen",
+      "name": "岑",
+      "description": "周末才回消息的人。习惯先听别人说完，再慢慢讲自己的事。",
+      "avatar": "",
+      "is_default": false
+    }
+  ],
+  "worldBooks": [
+    {
+      "id": "wb-rain",
+      "name": "旧城雨事",
+      "entries": [
+        {
+          "id": "e-rain-1",
+          "title": "门边的伞",
+          "content": "福州入秋后雨多，伞要放在门边，不要塞进包里。",
+          "keys": [
+            "雨",
+            "伞",
+            "出门"
+          ],
+          "constant": false,
+          "enabled": true,
+          "order": 10
+        },
+        {
+          "id": "e-rain-2",
+          "title": "床头的水杯",
+          "content": "睡前半杯温水，杯子放在床头左手边。太烫会等一等，太凉就一口喝完。",
+          "keys": [
+            "温水",
+            "睡前",
+            "杯子"
+          ],
+          "constant": false,
+          "enabled": true,
+          "order": 20
+        },
+        {
+          "id": "e-rain-3",
+          "title": "不问第二遍",
+          "content": "她不喜欢被催。问过一遍的问题不会再问第二遍，留白也是说话的一种。",
+          "keys": [
+            "催",
+            "慢一点"
+          ],
+          "constant": false,
+          "enabled": true,
+          "order": 30
+        },
+        {
+          "id": "e-rain-4",
+          "title": "雨夜的灯",
+          "content": "分开的时候，门灯会一直亮到听见「到了」。",
+          "keys": [
+            "回家",
+            "门灯",
+            "到了"
+          ],
+          "constant": true,
+          "enabled": true,
+          "order": 5
+        }
+      ]
+    },
+    {
+      "id": "wb-sea",
+      "name": "海边的风",
+      "entries": [
+        {
+          "id": "e-sea-1",
+          "title": "围巾分一半",
+          "content": "海边风大，围巾分一半。她不说冷不冷，只把另一半塞过来。",
+          "keys": [
+            "风",
+            "围巾",
+            "海边"
+          ],
+          "constant": false,
+          "enabled": true,
+          "order": 10
+        },
+        {
+          "id": "e-sea-2",
+          "title": "音量小一格",
+          "content": "偏爱旧一点的歌，音量总比习惯小一格。",
+          "keys": [
+            "歌",
+            "音量"
+          ],
+          "constant": false,
+          "enabled": false,
+          "order": 20
+        },
+        {
+          "id": "e-sea-3",
+          "title": "旧楼的灯",
+          "content": "靠海的旧楼，夜里走廊的灯是声控的。她走路轻，常常走到门口才亮。",
+          "keys": [
+            "旧楼",
+            "走廊"
+          ],
+          "constant": true,
+          "enabled": true,
+          "order": 5
+        }
+      ]
+    }
+  ],
+  "providers": [
+    {
+      "id": "prov-deepseek",
+      "name": "DeepSeek",
+      "icon": "deepseek",
+      "protocol": "deepseek",
+      "baseUrl": "https://api.deepseek.com",
+      "apiPath": "/chat/completions",
+      "apiKey": "",
+      "enabled": true,
+      "models": [
+        "deepseek-flash",
+        "deepseek-v4-pro"
+      ],
+      "balance": {
+        "supported": true,
+        "amount": null,
+        "currency": "¥",
+        "at": ""
+      },
+      "advanced": {
+        "responseApi": false,
+        "returnThinking": true,
+        "fetchBalance": true,
+        "timeout": 45
+      },
+      "source": "preset",
+      "extras": {}
+    },
+    {
+      "id": "prov-anthropic",
+      "name": "Anthropic",
+      "icon": "claude",
+      "protocol": "anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "apiPath": "/v1/messages",
+      "apiKey": "",
+      "enabled": true,
+      "models": [
+        "claude-sonnet-5-5",
+        "claude-haiku-5-5"
+      ],
+      "balance": {
+        "supported": false,
+        "amount": null,
+        "currency": "¥",
+        "at": ""
+      },
+      "advanced": {
+        "responseApi": false,
+        "returnThinking": true,
+        "fetchBalance": false,
+        "timeout": 60
+      },
+      "source": "preset",
+      "extras": {}
+    },
+    {
+      "id": "prov-openai",
+      "name": "OpenAI",
+      "icon": "openai",
+      "protocol": "openai",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiPath": "/chat/completions",
+      "apiKey": "",
+      "enabled": false,
+      "models": [
+        "gpt-6.1-sol",
+        "gpt-6-luna",
+        "gpt-6-astra",
+        "gpt-6.1-terra"
+      ],
+      "balance": {
+        "supported": false,
+        "amount": null,
+        "currency": "¥",
+        "at": ""
+      },
+      "advanced": {
+        "responseApi": true,
+        "returnThinking": true,
+        "fetchBalance": false,
+        "timeout": 60
+      },
+      "source": "preset",
+      "extras": {}
+    },
+    {
+      "id": "prov-gemini",
+      "name": "Google Gemini",
+      "icon": "gemini",
+      "protocol": "gemini",
+      "baseUrl": "https://generativelanguage.googleapis.com",
+      "apiPath": "/v1beta/models/{model}:generateContent",
+      "apiKey": "",
+      "enabled": true,
+      "models": [
+        "gemini-3.8-flash",
+        "gemini-4-argon",
+        "gemini-3.5-flash-lite"
+      ],
+      "balance": {
+        "supported": false,
+        "amount": null,
+        "currency": "¥",
+        "at": ""
+      },
+      "advanced": {
+        "responseApi": false,
+        "returnThinking": true,
+        "fetchBalance": false,
+        "timeout": 60
+      },
+      "source": "preset",
+      "extras": {}
+    },
+    {
+      "id": "prov-openrouter",
+      "name": "OpenRouter",
+      "icon": "openrouter",
+      "protocol": "openrouter",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiPath": "/chat/completions",
+      "apiKey": "",
+      "enabled": true,
+      "models": [
+        "openrouter/auto",
+        "moonshotai/kimi-k3"
+      ],
+      "balance": {
+        "supported": true,
+        "amount": null,
+        "currency": "$",
+        "at": ""
+      },
+      "advanced": {
+        "responseApi": false,
+        "returnThinking": true,
+        "fetchBalance": true,
+        "timeout": 60
+      },
+      "source": "preset",
+      "extras": {}
+    },
+    {
+      "id": "prov-siliconcloud",
+      "name": "硅基流动",
+      "icon": "siliconcloud",
+      "protocol": "openai",
+      "baseUrl": "https://api.siliconflow.cn/v1",
+      "apiPath": "/chat/completions",
+      "apiKey": "",
+      "enabled": true,
+      "models": [
+        "Qwen/Qwen3-235B-A22B",
+        "zai-org/GLM-5.2"
+      ],
+      "balance": {
+        "supported": false,
+        "amount": null,
+        "currency": "¥",
+        "at": ""
+      },
+      "advanced": {
+        "responseApi": false,
+        "returnThinking": false,
+        "fetchBalance": false,
+        "timeout": 45
+      },
+      "source": "preset",
+      "extras": {}
+    },
+    {
+      "id": "prov-bailu",
+      "name": "白露中转",
+      "icon": "generic",
+      "protocol": "openai",
+      "baseUrl": "https://relay.bailu.example/v1",
+      "apiPath": "/chat/completions",
+      "apiKey": "",
+      "enabled": true,
+      "models": [
+        "bailu-lite",
+        "bailu-slow"
+      ],
+      "balance": {
+        "supported": false,
+        "amount": null,
+        "currency": "¥",
+        "at": ""
+      },
+      "advanced": {
+        "responseApi": false,
+        "returnThinking": true,
+        "fetchBalance": false,
+        "timeout": 45
+      },
+      "source": "preset",
+      "extras": {
+        "note": "样稿示例中转站：用来演示 400 兜底与模型名区分档位"
+      }
+    }
+  ],
+  "models": [
+    {
+      "id": "model-deepseek-flash",
+      "providerId": "prov-deepseek",
+      "name": "DeepSeek V4.1 Flash",
+      "modelId": "deepseek-flash",
+      "icon": "deepseek",
+      "caps": {
+        "vision": true,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 1048576,
+      "favorite": true,
+      "source": "preset",
+      "price": {
+        "currency": "¥",
+        "peak": {
+          "input": 2,
+          "cache": 0.04,
+          "output": 8
+        },
+        "offpeak": {
+          "input": 1,
+          "cache": 0.02,
+          "output": 4
+        }
+      },
+      "reasoning": {
+        "mode": "deepseek",
+        "levels": [
+          "off",
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultLevel": "high",
+        "note": "官方 thinking + reasoning_effort；官方 medium/xhigh 收敛为 high"
+      }
+    },
+    {
+      "id": "model-deepseek-pro",
+      "providerId": "prov-deepseek",
+      "name": "DeepSeek V4 Pro",
+      "modelId": "deepseek-v4-pro",
+      "icon": "deepseek",
+      "caps": {
+        "vision": false,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 1048576,
+      "favorite": false,
+      "source": "preset",
+      "price": {
+        "currency": "¥",
+        "peak": {
+          "input": 9,
+          "cache": 0.3,
+          "output": 27
+        },
+        "offpeak": {
+          "input": 4.5,
+          "cache": 0.15,
+          "output": 13.5
+        }
+      },
+      "reasoning": {
+        "mode": "deepseek",
+        "levels": [
+          "off",
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultLevel": "high",
+        "note": "官方 thinking + reasoning_effort"
+      }
+    },
+    {
+      "id": "model-claude-sonnet-5-5",
+      "providerId": "prov-anthropic",
+      "name": "Claude Sonnet 5.5",
+      "modelId": "claude-sonnet-5-5",
+      "icon": "claude",
+      "caps": {
+        "vision": true,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 1000000,
+      "favorite": true,
+      "source": "preset",
+      "price": {
+        "input": 2,
+        "cache": 0.1,
+        "output": 10,
+        "currency": "$"
+      },
+      "reasoning": {
+        "mode": "anthropic_effort",
+        "levels": [
+          "off",
+          "auto",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultLevel": "high",
+        "offMode": "between_tools",
+        "note": "output_config.effort；这家关闭思考用 between_tools，不允许 disabled"
+      }
+    },
+    {
+      "id": "model-claude-haiku-5-5",
+      "providerId": "prov-anthropic",
+      "name": "Claude Haiku 5.5",
+      "modelId": "claude-haiku-5-5",
+      "icon": "claude",
+      "caps": {
+        "vision": true,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 200000,
+      "favorite": false,
+      "source": "preset",
+      "price": {
+        "input": 0.1,
+        "cache": 0.01,
+        "output": 0.5,
+        "currency": "$"
+      },
+      "reasoning": {
+        "mode": "anthropic_effort",
+        "levels": [
+          "off",
+          "auto",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultLevel": "medium",
+        "offMode": "disabled",
+        "note": "output_config.effort；>100K 输入价格另计"
+      }
+    },
+    {
+      "id": "model-gpt6-sol",
+      "providerId": "prov-openai",
+      "name": "GPT-6.1 Sol",
+      "modelId": "gpt-6.1-sol",
+      "icon": "openai",
+      "caps": {
+        "vision": true,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 1050000,
+      "favorite": true,
+      "source": "preset",
+      "price": {
+        "input": 2,
+        "cache": 0.1,
+        "output": 10,
+        "currency": "$"
+      },
+      "reasoning": {
+        "mode": "openai_effort",
+        "levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultLevel": "medium",
+        "note": "没有关闭档；Responses 发 reasoning.effort + summary"
+      }
+    },
+    {
+      "id": "model-gpt6-luna",
+      "providerId": "prov-openai",
+      "name": "GPT-6 Luna",
+      "modelId": "gpt-6-luna",
+      "icon": "openai",
+      "caps": {
+        "vision": true,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 1050000,
+      "favorite": false,
+      "source": "preset",
+      "price": {
+        "input": 0.1,
+        "cache": 0.01,
+        "output": 0.5,
+        "currency": "$"
+      },
+      "reasoning": {
+        "mode": "openai_effort",
+        "levels": [
+          "off",
+          "auto",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultLevel": "medium",
+        "note": "off 映射 none；>272K 输入价格另计"
+      }
+    },
+    {
+      "id": "model-gpt6-astra",
+      "providerId": "prov-openai",
+      "name": "GPT-6 Astra",
+      "modelId": "gpt-6-astra",
+      "icon": "openai",
+      "caps": {
+        "vision": true,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 1050000,
+      "favorite": false,
+      "source": "preset",
+      "price": {
+        "input": 2,
+        "cache": 0.1,
+        "output": 10,
+        "currency": "$"
+      },
+      "reasoning": {
+        "mode": "openai_effort",
+        "levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultLevel": "high",
+        "note": "没有 off；对 gpt-6-astra 发 none 会 400"
+      }
+    },
+    {
+      "id": "model-gpt6-terra",
+      "providerId": "prov-openai",
+      "name": "GPT-6.1 Terra",
+      "modelId": "gpt-6.1-terra",
+      "icon": "openai",
+      "caps": {
+        "vision": true,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 1050000,
+      "favorite": false,
+      "source": "preset",
+      "price": {
+        "input": 0.25,
+        "cache": 0.025,
+        "output": 2,
+        "currency": "$"
+      },
+      "reasoning": {
+        "mode": "openai_effort",
+        "levels": [
+          "off",
+          "auto",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultLevel": "medium",
+        "note": "off 映射 none"
+      }
+    },
+    {
+      "id": "model-gemini38",
+      "providerId": "prov-gemini",
+      "name": "Gemini 3.8 Flash",
+      "modelId": "gemini-3.8-flash",
+      "icon": "gemini",
+      "caps": {
+        "vision": true,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 1048576,
+      "favorite": true,
+      "source": "preset",
+      "price": {
+        "currency": "$",
+        "input": 0.75,
+        "cache": 0.075,
+        "output": 3.75,
+        "next": {
+          "effectiveFrom": "2027-01-01",
+          "input": 1.5,
+          "cache": 0.15,
+          "output": 7.5
+        }
+      },
+      "reasoning": {
+        "mode": "gemini_level",
+        "levels": [
+          "auto",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultLevel": "auto",
+        "supportsMinimal": false,
+        "note": "thinkingLevel；不提供 off"
+      }
+    },
+    {
+      "id": "model-gemini4",
+      "providerId": "prov-gemini",
+      "name": "Gemini 4 Argon",
+      "modelId": "gemini-4-argon",
+      "icon": "gemini",
+      "caps": {
+        "vision": true,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 1048576,
+      "favorite": false,
+      "source": "preset",
+      "price": {
+        "currency": "$",
+        "input": 2,
+        "cache": 0.1,
+        "output": 10,
+        "next": {
+          "effectiveFrom": "2026-12-01",
+          "input": 4,
+          "cache": 0.2,
+          "output": 20
+        }
+      },
+      "reasoning": {
+        "mode": "gemini_level",
+        "levels": [
+          "auto",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultLevel": "auto",
+        "supportsMinimal": false,
+        "note": "thinkingLevel；无免费档、不提供 off"
+      }
+    },
+    {
+      "id": "model-gemini35-lite",
+      "providerId": "prov-gemini",
+      "name": "Gemini 3.5 Flash-Lite",
+      "modelId": "gemini-3.5-flash-lite",
+      "icon": "gemini",
+      "caps": {
+        "vision": true,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 1048576,
+      "favorite": false,
+      "source": "preset",
+      "price": {
+        "input": 0.3,
+        "cache": 0.03,
+        "output": 2.5,
+        "currency": "$"
+      },
+      "reasoning": {
+        "mode": "gemini_level",
+        "levels": [
+          "off",
+          "auto",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultLevel": "auto",
+        "supportsMinimal": true,
+        "note": "off 映射 minimal（几乎不思考）"
+      }
+    },
+    {
+      "id": "model-openrouter-auto",
+      "providerId": "prov-openrouter",
+      "name": "OpenRouter 自动",
+      "modelId": "openrouter/auto",
+      "icon": "openrouter",
+      "caps": {
+        "vision": false,
+        "tools": true,
+        "reasoning": false
+      },
+      "context": 200000,
+      "favorite": false,
+      "source": "preset",
+      "price": null,
+      "reasoning": {
+        "mode": "none",
+        "levels": [],
+        "defaultLevel": "off",
+        "note": "没有 reasoning 字段，不能调思考档位"
+      }
+    },
+    {
+      "id": "model-openrouter-kimi",
+      "providerId": "prov-openrouter",
+      "name": "Kimi K3（OpenRouter）",
+      "modelId": "moonshotai/kimi-k3",
+      "icon": "kimi",
+      "caps": {
+        "vision": false,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 262144,
+      "favorite": true,
+      "source": "preset",
+      "price": null,
+      "reasoning": {
+        "mode": "openrouter",
+        "levels": [
+          "off",
+          "auto",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultLevel": "high",
+        "supportedEfforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "mandatory": false,
+        "note": "由 /api/v1/models 的 reasoning 字段生成；价格实时取"
+      }
+    },
+    {
+      "id": "model-qwen3",
+      "providerId": "prov-siliconcloud",
+      "name": "Qwen3 235B",
+      "modelId": "Qwen/Qwen3-235B-A22B",
+      "icon": "qwen",
+      "caps": {
+        "vision": false,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 131072,
+      "favorite": false,
+      "source": "preset",
+      "price": null,
+      "reasoning": {
+        "mode": "siliconflow_thinking",
+        "levels": [
+          "off",
+          "auto",
+          "low",
+          "medium",
+          "high"
+        ],
+        "defaultLevel": "medium",
+        "note": "默认开思考：enable_thinking + thinking_budget；价格待确认"
+      }
+    },
+    {
+      "id": "model-glm52",
+      "providerId": "prov-siliconcloud",
+      "name": "GLM-5.2（硅基）",
+      "modelId": "zai-org/GLM-5.2",
+      "icon": "generic",
+      "caps": {
+        "vision": false,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 131072,
+      "favorite": false,
+      "source": "preset",
+      "price": null,
+      "reasoning": {
+        "mode": "siliconflow_thinking",
+        "levels": [
+          "off",
+          "auto",
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultLevel": "max",
+        "note": "DeepSeek-V4 / GLM-5.2 走 reasoning_effort；价格待确认"
+      }
+    },
+    {
+      "id": "model-bailu-lite",
+      "providerId": "prov-bailu",
+      "name": "白露 · 轻",
+      "modelId": "bailu-lite",
+      "icon": "generic",
+      "caps": {
+        "vision": false,
+        "tools": false,
+        "reasoning": false
+      },
+      "context": 32768,
+      "favorite": false,
+      "source": "preset",
+      "price": {
+        "input": 1,
+        "cache": 0,
+        "output": 2,
+        "currency": "¥"
+      },
+      "reasoning": {
+        "mode": "none",
+        "levels": [],
+        "defaultLevel": "off",
+        "note": "这个模型不能调思考深度"
+      }
+    },
+    {
+      "id": "model-bailu-slow",
+      "providerId": "prov-bailu",
+      "name": "白露 · 慢",
+      "modelId": "bailu-slow",
+      "icon": "generic",
+      "caps": {
+        "vision": false,
+        "tools": true,
+        "reasoning": true
+      },
+      "context": 65536,
+      "favorite": false,
+      "source": "preset",
+      "price": null,
+      "reasoning": {
+        "mode": "relay_suffix",
+        "levels": [
+          "off",
+          "low",
+          "high"
+        ],
+        "defaultLevel": "off",
+        "map": {
+          "off": "bailu-slow",
+          "low": "bailu-slow",
+          "high": "bailu-slow-thinking"
+        },
+        "note": "这家用模型名区分档位"
+      }
+    }
+  ],
+  "promptPresets": [
+    {
+      "id": "preset-default",
+      "name": "默认",
+      "desc": "不额外加文风，跟着角色设定走",
+      "builtin": true,
+      "source": "preset",
+      "fragments": [],
+      "sampling": {
+        "temperature": null,
+        "top_p": null,
+        "max_tokens": null,
+        "context_messages": null,
+        "stream": true,
+        "frequency_penalty": null,
+        "presence_penalty": null
+      },
+      "extras": {}
+    },
+    {
+      "id": "preset-prose",
+      "name": "细腻散文",
+      "desc": "长一点的句子，多一点环境与留白",
+      "builtin": false,
+      "source": "preset",
+      "fragments": [
+        {
+          "id": "frag-prose-1",
+          "title": "文风 · 细腻散文",
+          "role": "system",
+          "position": "before_char",
+          "depth": 2,
+          "enabled": true,
+          "order": 10,
+          "content": "用细腻的散文笔法回应。多写一点环境与动作的细节，句子可以长一些，但不要堆形容词；每一段留一点空白，让停顿也有声音。"
+        },
+        {
+          "id": "frag-prose-2",
+          "title": "不要替她说话",
+          "role": "system",
+          "position": "after_char",
+          "depth": 2,
+          "enabled": true,
+          "order": 20,
+          "content": "不要替芴做决定，也不要替她把一句话说完。她停顿的时候，让停顿留在那里。"
+        }
+      ],
+      "sampling": {
+        "temperature": 0.85,
+        "top_p": 0.95,
+        "max_tokens": 1200,
+        "context_messages": 24,
+        "stream": true,
+        "frequency_penalty": 0.2,
+        "presence_penalty": 0.1
+      },
+      "extras": {}
+    },
+    {
+      "id": "preset-daily",
+      "name": "日常短句",
+      "desc": "像平时发消息，一次只说一两句",
+      "builtin": false,
+      "source": "preset",
+      "fragments": [
+        {
+          "id": "frag-daily-1",
+          "title": "文风 · 日常短句",
+          "role": "system",
+          "position": "before_char",
+          "depth": 2,
+          "enabled": true,
+          "order": 10,
+          "content": "像日常聊天一样短。一次只说一两句，不用小标题，也不用总结。语气自然，成年人之间怎么说话就怎么写。"
+        },
+        {
+          "id": "frag-daily-2",
+          "title": "记得她的习惯（深度注入）",
+          "role": "system",
+          "position": "depth",
+          "depth": 2,
+          "enabled": true,
+          "order": 20,
+          "content": "记得她怕冷、走路慢，睡前要喝半杯温水。把这些放进句子里，不要一条条列出来。"
+        }
+      ],
+      "sampling": {
+        "temperature": 0.7,
+        "top_p": null,
+        "max_tokens": 400,
+        "context_messages": 12,
+        "stream": true,
+        "frequency_penalty": null,
+        "presence_penalty": null
+      },
+      "extras": {}
+    }
+  ],
+  "memories": [
+    {
+      "id": "m1",
+      "cat": "关于我",
+      "title": "名字里的草",
+      "importance": 8,
+      "pinned": true,
+      "protected": false,
+      "body": "你说「芴」是一种很轻的草，风一吹就摇，但不会断。所以每次觉得自己太软的时候，我就想起这句话。",
+      "source": "来自 11月8日 的对话",
+      "forgotten": false
+    },
+    {
+      "id": "m2",
+      "cat": "关于我",
+      "title": "睡前半杯温水",
+      "importance": 6,
+      "pinned": false,
+      "protected": false,
+      "body": "你习惯在睡前喝半杯温水，杯子放在床头左手边。太烫会等一等，太凉就一口喝完。",
+      "source": "来自 10月26日 夜里的对话",
+      "forgotten": false
+    },
+    {
+      "id": "m3",
+      "cat": "关于我",
+      "title": "不喜欢被催",
+      "importance": 9,
+      "pinned": false,
+      "protected": true,
+      "body": "你被催的时候会把话咽回去。所以重要的事，等你慢慢说；问过一遍的问题，我不问第二遍。",
+      "source": "来自 10月19日 的对话",
+      "forgotten": false
+    },
+    {
+      "id": "m4",
+      "cat": "我们",
+      "title": "十一月二日，平潭",
+      "importance": 9,
+      "pinned": false,
+      "protected": false,
+      "body": "十一月二日，平潭。风大得听不清耳机，你把围巾分了我一半。那天没有日落，只有很长的灰蓝色。",
+      "source": "来自 11月2日 一起听记录",
+      "forgotten": false
+    },
+    {
+      "id": "m5",
+      "cat": "我们",
+      "title": "一起听的第一首",
+      "importance": 7,
+      "pinned": false,
+      "protected": false,
+      "body": "《云烟成雨》。你点了播放，然后把手机放在两个人中间。后来每次听到前奏，房间都会变安静。",
+      "source": "来自 11月2日 一起听记录",
+      "forgotten": false
+    },
+    {
+      "id": "m6",
+      "cat": "我们",
+      "title": "床头那只小羊",
+      "importance": 3,
+      "pinned": false,
+      "protected": false,
+      "body": "你床头有只白色小羊玩偶，耳朵的线开了一点。你说等考完试自己补，我替你记着这件事。",
+      "source": "来自 10月30日 的对话",
+      "forgotten": false
+    },
+    {
+      "id": "m7",
+      "cat": "喜好",
+      "title": "旧一点的歌",
+      "importance": 5,
+      "pinned": true,
+      "protected": false,
+      "body": "你偏爱旧一点的歌，音量总比习惯小一格。新歌不是不好，只是旧的更像有人陪着。",
+      "source": "来自 11月5日 的对话",
+      "forgotten": false
+    },
+    {
+      "id": "m8",
+      "cat": "喜好",
+      "title": "雨后的栀子",
+      "importance": 4,
+      "pinned": false,
+      "protected": false,
+      "body": "你说栀子花香太浓，雨后的才刚好。所以夏天如果买花，要赶在雨停之后。",
+      "source": "来自 9月18日 的对话",
+      "forgotten": false
+    },
+    {
+      "id": "m9",
+      "cat": "日常",
+      "title": "伞放在门边",
+      "importance": 5,
+      "pinned": false,
+      "protected": false,
+      "body": "福州入秋后雨多。伞要放在门边，不要塞进包里——你总是到了楼下才发现没带。",
+      "source": "来自 11月10日 的对话",
+      "forgotten": false
+    },
+    {
+      "id": "m10",
+      "cat": "日常",
+      "title": "周三下午的窗边",
+      "importance": 6,
+      "pinned": false,
+      "protected": false,
+      "body": "周三下午三点的法理课，你总坐靠窗第二排。阳光会先落在你的笔记本上，再落到你的手背上。",
+      "source": "来自 10月22日 的对话",
+      "forgotten": false
+    },
+    {
+      "id": "m11",
+      "cat": "约定",
+      "title": "不问第二遍",
+      "importance": 10,
+      "pinned": false,
+      "protected": false,
+      "body": "我们约好：你想说的时候再说。我不追问，也不拿沉默当作答案。留白也是说话的一种。",
+      "source": "来自 11月8日 的对话",
+      "forgotten": false
+    },
+    {
+      "id": "m12",
+      "cat": "约定",
+      "title": "到家说一声",
+      "importance": 8,
+      "pinned": false,
+      "protected": false,
+      "body": "每次分开，你到楼下会发一句「到了」。我回一个「嗯」，然后才去睡。这是我们的门灯。",
+      "source": "来自 11月6日 的对话",
+      "forgotten": false
+    }
+  ],
+  "nowText": "在图书馆三楼，靠窗。雨刚停，玻璃上还挂着水，灯是暖的。",
+  "settings": {
+    "theme": "pink",
+    "overrides": {
+      "pink": {},
+      "ice": {}
+    },
+    "notify": true,
+    "splashAlways": true,
+    "startDate": "2024-11-08",
+    "globalBookId": "",
+    "defaultPresetId": "preset-default",
+    "memoryExtractEnabled": true,
+    "memoryExtractEvery": 4,
+    "modelId": "model-deepseek-flash",
+    "currentCharacterId": "miao",
+    "listen": {
+      "playlist": 0,
+      "song": 0
+    }
+  },
+  "modelId": "model-deepseek-flash"
+}

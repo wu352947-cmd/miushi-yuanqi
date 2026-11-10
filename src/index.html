@@ -5,13 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#f4ecee">
-<title>缪诗鸳杞 · 移动端样稿</title>
+<title>缪诗鸳杞</title>
 <style>/*@CSS@*/</style>
 </head>
 <body>
 <div class="stage">
   <div class="frame">
     <div class="app" id="app">
+
+      <div class="login-layer" id="loginLayer" aria-hidden="true">
+        <div class="login-card" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+          <p class="login-title serif" id="loginTitle">缪诗鸳杞</p>
+          <p class="login-sub" id="loginSub">这台服务设置了登录密码，先输入再进去。</p>
+          <input class="field login-input" id="loginPass" type="password" placeholder="登录密码" autocomplete="current-password" aria-label="登录密码">
+          <button class="btn btn--primary login-btn" id="loginBtn" type="button">进入</button>
+          <p class="login-note" id="loginNote">密码设置在后端的 APP_PASSWORD 里；浏览器只保存一个 HttpOnly 的会话 cookie。</p>
+        </div>
+      </div>
 
       <div class="status" aria-hidden="true">
         <span class="status__time" id="statusTime">21:44</span>
@@ -39,7 +49,7 @@
 
               <article class="w w--wide w-couple">
                 <div class="w-head">
-                  <span class="label">在一起</span>
+                  <span class="label"><span class="star">✧</span> 在一起</span>
                   <span class="label label--soft" id="homeSince">自 2024.11.08</span>
                 </div>
                 <div class="couple-inline">
@@ -50,6 +60,7 @@
                   <div class="days-block">
                     <span class="days-num" id="homeDays">733</span>
                     <span class="days-unit">天</span>
+                    <span class="days-en en-label">TOGETHER, DAY BY DAY</span>
                   </div>
                 </div>
                 <p class="poem serif" id="homePoem">今天有雨。伞在门边，灯也留着。</p>
@@ -78,13 +89,14 @@
                   <circle class="clock__pin" cx="50" cy="50" r="2.4"/>
                 </svg>
                 <p class="clock__date" id="homeWeekday">周二 · 11月10日</p>
+                <p class="clock__en en-label">✧ THIS LITTLE HOUR</p>
               </article>
 
               <div class="w-stack">
                 <article class="w w--pill">
                   <span class="pill-icon"><svg viewBox="0 0 20 20" fill="none"><path d="M3.4 9.5 10 3.6l6.6 5.9"/><path d="M5.6 8.6v7.4h8.8V8.6"/></svg></span>
                   <div class="pill-text">
-                    <span class="label">欢迎回家</span>
+                    <span class="label"><span class="star">✧</span> 欢迎回家</span>
                     <span class="pill-text__main" id="homeGreeting">晚上好，芴</span>
                   </div>
                 </article>
@@ -103,6 +115,7 @@
                   <div class="w-note__who">
                     <span class="note-name serif" data-nm="char">缪诗</span>
                     <span class="label label--soft">留言 · <span id="homeNoteTime">22:41</span></span>
+                    <span class="en-label">A NOTE BY THE LAMP</span>
                   </div>
                   <span class="note-mark"><svg viewBox="0 0 20 20" fill="none"><path d="M4 4.6h12v8.2H9.6L6 15.8v-3H4z"/></svg></span>
                 </div>
@@ -115,11 +128,11 @@
               </article>
 
               <article class="w w--wide w-player" data-nav="listen" role="button" tabindex="0" aria-label="打开一起听">
-                <span class="mini-disc" aria-hidden="true"><i></i></span>
+                <span class="mini-disc" aria-hidden="true"><img class="mini-disc__art" id="homeDiscCover" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"><i></i></span>
                 <div class="player-main">
-                  <span class="label">一起听</span>
-                  <span class="player-title serif" id="homeTrack">平潭的风</span>
-                  <span class="player-artist" id="homeArtist">海边邮局</span>
+                  <span class="label"><span class="star">✧</span> 一起听 <em class="en-inline">TOGETHER</em></span>
+                  <span class="player-title serif" id="homeTrack">云烟成雨</span>
+                  <span class="player-artist" id="homeArtist">房东的猫</span>
                   <span class="mini-bar"><i id="homeProgress" style="width:30%"></i></span>
                 </div>
                 <button class="round-btn player-btn" type="button" data-action="home-play" aria-label="播放">
@@ -129,15 +142,16 @@
               </article>
 
               <article class="w w--mem" data-nav="memory" role="button" tabindex="0" aria-label="打开记忆">
-                <div class="w-head"><span class="label">今日记住</span><svg viewBox="0 0 20 20" fill="none"><path d="M4 4.6h12v9.8H9.6L6 17.4v-3H4z"/></svg></div>
+                <div class="w-head"><span class="label"><span class="star">✧</span> 今日记住</span><svg viewBox="0 0 20 20" fill="none"><path d="M4 4.6h12v9.8H9.6L6 17.4v-3H4z"/></svg></div>
                 <p class="mem-title serif" id="homeMemTitle">睡前半杯温水</p>
                 <p class="mem-text" id="homeMemText">你习惯睡前喝半杯温水，杯子放在床头左手边。</p>
               </article>
 
               <article class="w w--quote">
-                <span class="label">每日一句</span>
+                <span class="label"><span class="star">✧</span> 每日一句</span>
                 <p class="quote-text serif" id="homeQuote">把日子过成两个人的，就不算浪费。</p>
                 <span class="quote-from" id="homeQuoteFrom">— 缪诗</span>
+                <span class="quote-en en-label">ONE LINE A DAY</span>
               </article>
 
               <article class="w w--photo" data-action="func" data-func="今日照片" role="button" tabindex="0" aria-label="今日照片">
@@ -149,6 +163,7 @@
                 <div class="w-head"><span class="label">时间胶囊</span><svg viewBox="0 0 20 20" fill="none"><path d="M4.6 6.4h10.8v9H4.6z"/><path d="M3.6 4.4h12.8v2H3.6z"/><path d="M10 8.6v4.2"/></svg></div>
                 <p class="capsule-days"><span class="days-num" id="homeCountdown">12</span><span class="days-unit">天</span></p>
                 <p class="capsule-sub">离你的生日</p>
+                <p class="capsule-en en-label">TIME IN A CAPSULE</p>
               </article>
 
               <div class="func-grid">
@@ -177,7 +192,7 @@
                   <span class="avatar avatar--ai av-xxs" data-av="char">缪</span>
                   <span class="avatar avatar--me av-xxs" data-av="persona">芴</span>
                 </span>
-                <span class="sign-text serif" id="homeSignText">缪诗 &amp; 芴 · 把日子过成两个人的</span>
+                <span class="sign-text serif" id="homeSignText"><span class="star">✧</span> 缪诗 &amp; 芴 · 把日子过成两个人的</span>
                 <svg class="sign-heart" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 16.4S3.8 12.5 3.8 8.6A3.7 3.7 0 0 1 10 6.2a3.7 3.7 0 0 1 6.2 2.4c0 3.9-6.2 7.8-6.2 7.8z"/></svg>
               </div>
 
@@ -278,7 +293,7 @@
 
             <article class="now-card">
               <div class="w-head">
-                <span class="label">此刻</span>
+                <span class="label"><span class="star">✧</span> 此刻 <em class="en-inline">RIGHT NOW</em></span>
                 <span class="label label--soft" id="nowDate">11月10日 22:41</span>
               </div>
               <p class="now-card__text serif" id="nowText">在图书馆三楼，靠窗。雨刚停，玻璃上还挂着水，灯是暖的。</p>
@@ -308,8 +323,10 @@
 
             <div class="list-card" id="memoryList"><!-- 由 JS 渲染 --></div>
 
+            <button class="text-btn memory-new" type="button" data-open="memoryNew">＋ 新增一条记忆</button>
+
             <p class="memory-hint">
-              在对话里说<u>「记住……」</u>，缪诗会按原样收进这里。<br>
+              在对话里说<u>「记住这个」</u>，或者在聊天菜单里点「记住这句话」，都会按原样收进这里。<br>
               轻轻遗忘的东西都还在抽屉里，随时可以捡回来。
             </p>
             <button class="text-btn memory-forgotten" type="button" data-open="forgotten">
@@ -334,14 +351,20 @@
               <div class="record-wrap">
                 <div class="record" id="record" aria-hidden="true">
                   <div class="record__grooves"></div>
-                  <div class="record__label serif" data-nm="char" id="recordLabel">缪</div>
+                  <div class="record__label serif" id="recordLabel">
+                    <img class="record__art" id="recordCover" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+                    <span class="record__fallback" data-nm="char">缪</span>
+                  </div>
                   <div class="record__pin"></div>
                 </div>
               </div>
               <div class="track">
-                <span class="label">正在听</span>
-                <h3 class="track__title serif" id="trackTitle">平潭的风</h3>
-                <p class="track__artist" id="trackArtist">海边邮局</p>
+                <img class="track__cover" id="trackCover" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+                <div class="track__text">
+                  <span class="label"><span class="star">✧</span> 正在听 <em class="en-inline">NOW PLAYING</em></span>
+                  <h3 class="track__title serif" id="trackTitle">云烟成雨</h3>
+                  <p class="track__artist" id="trackArtist">房东的猫</p>
+                </div>
               </div>
               <div class="progress">
                 <div class="progress__track" id="progressTrack" role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="30">
@@ -418,7 +441,7 @@
 
             <article class="card token-card token-card--link" data-nav="stats" role="button" tabindex="0" aria-label="打开统计">
               <div class="card-head">
-                <span class="label">本月用量</span>
+                <span class="label"><span class="star">✧</span> 本月用量 <em class="en-inline">THIS MONTH</em></span>
                 <button class="text-btn" type="button" data-nav="stats">统计</button>
               </div>
               <div class="token-nums">
@@ -479,7 +502,7 @@
               </button>
             </div>
 
-            <p class="page-foot">缪诗鸳杞 · 只在这台手机里 · v0.6 · A2 阶段</p>
+            <p class="page-foot">缪诗鸳杞 · 你的本机后端 · v0.7 · B 阶段</p>
           </div>
         </section>
 
@@ -523,9 +546,11 @@
             </div>
 
             <article class="card about-card">
-              <p class="about-text serif">缪诗鸳杞，一个只放给两个人用的地方。对话与记忆都留在这台手机里，不上传，也不训练。</p>
-              <p class="label label--soft">样稿 · v0.5 · A 阶段 · 仅本地假数据</p>
+              <p class="about-text serif">缪诗鸳杞，一个只放给两个人用的地方。对话与记忆都留在你自己的本机后端里，不上传，也不训练。</p>
+              <p class="label label--soft">v0.7 · B 阶段 · 本机 FastAPI + SQLite</p>
             </article>
+
+            <p class="server-note" id="serverNote">正在检查本机后端…</p>
 
             <article class="card theme-preview">
               <div class="card-head">
@@ -664,7 +689,7 @@
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
     </div>
   </div>
-  <p class="stage__note">缪诗鸳杞 · 移动端静态样稿 · 390 × 844</p>
+  <p class="stage__note">缪诗鸳杞 · 本机后端 · 390 × 844</p>
 </div>
 
 <!-- 手机上的系统文件选择器（导入用；样稿也走真实文件） -->

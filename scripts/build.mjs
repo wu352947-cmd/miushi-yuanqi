@@ -19,7 +19,7 @@ for (const f of wpFiles) {
   const b64 = fs.readFileSync(path.join(wpDir, f)).toString('base64');
   wpMap[f.replace('.jpg', '')] = 'data:image/jpeg;base64,' + b64;
 }
-if (wpFiles.length !== 17) throw new Error('壁纸数量不是 17：' + wpFiles.length);
+if (wpFiles.length !== 18) throw new Error('壁纸数量不是 18：' + wpFiles.length);
 
 const wallpapers = 'const WALLPAPERS = ' + JSON.stringify(wpMap) + ';';
 

@@ -1,14 +1,51 @@
-node_modules/
+# 环境变量与密钥
 .env
 .env.*
 !.env.example
-*.log
+server/.env
+
+# SQLite 数据库文件（本机数据，不入库）
+data/*.db
+data/*.db-*
+data/*.sqlite
+data/*.sqlite-*
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# 临时文件
 .DS_Store
-Thumbs.db
+*.log
+
+# 本地临时运行文件
+.tmp/
+
+# 截图与本地运行痕迹
+shots/
+.pytest_cache/
 .done
 .exit
+.done.prev
+.exit.prev
+
+# 历史构建，只保留当前 dist/index.html
 dist/*.prev.html
 dist/index.before*
 dist/index.round*
 dist/index.turn*
 dist/index.prev.html
+dist/index.phase-*
+dist/index.c*-covers-inline.html
+dist/index.d-covers-inline.html
+
+# 体量很大的过程参考图，不入库
+ref/preview/
+ref/user-bugs/
+ref/user-feedback-r6/

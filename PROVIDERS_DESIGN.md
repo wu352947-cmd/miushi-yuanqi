@@ -1,12 +1,12 @@
 # 模型与提供商 · 思考档位 · 统计 · 提示词预设（后端对接设计）
 
-本文件给后续后端（FastAPI + SQLite）用。样稿里的所有模型请求、Key、余额、usage 都是本地假数据；下面写的是**正式版应该怎么落地**，以及样稿里已经写好的、可以直接复用的函数。
+本文件给下一阶段（VPS 上的 FastAPI + SQLite）用。样稿里的所有模型请求、Key、余额、usage 都是本地假数据；下面写的是**正式版应该怎么落地**，以及样稿里已经写好的、可以直接复用的函数。
 
 ---
 
 ## 0. 一句话原则
 
-**浏览器不直接拿 API Key 发模型请求。** Key 存服务端，所有模型请求由后端转发；这同时解决浏览器直连中转站的 CORS 问题。样稿阶段为了演示，Key 暂存 `localStorage`，界面始终掩码，导出的提供商 JSON 默认不带 Key。
+**浏览器不直接拿 API Key 发模型请求。** Key 存 VPS 后端，所有模型请求由后端转发；这同时解决浏览器直连中转站的 CORS 问题。样稿阶段为了演示，Key 暂存 `localStorage`，界面始终掩码，导出的提供商 JSON 默认不带 Key。
 
 ---
 
@@ -416,13 +416,13 @@ cost =
 
 ## 7. API Key 存放与安全（正式版）
 
-1. **Key 只在服务端**：放在服务端数据库或环境变量里；按用户加密存储（例如 libsodium / Fernet，密钥放在服务端单独的环境变量里）。
+1. **Key 只在 VPS 后端**：放在服务端数据库或环境变量里；按用户加密存储（例如 libsodium / Fernet，密钥放 VPS 上单独的 env）。
 2. **浏览器不直接拿 Key 发请求**：前端只调同源后端，例如：
    - `POST /api/providers/{id}/test`
    - `POST /api/providers/{id}/models`（拉取模型列表）
    - `POST /api/providers/{id}/balance`
    - `POST /api/chat/stream`
-3. **同时解决 CORS**：浏览器只和后端同源通信；真正的模型请求由服务器发出，中转站不会看到跨域问题。
+3. **同时解决 CORS**：浏览器只和 VPS 同源通信；真正的模型请求由服务器发出，中转站不会看到跨域问题。
 4. **界面始终掩码**：`GET /api/providers` 只返回 `keyMasked: "sk-••••1234"`、`hasKey: true`，永不返回明文；「显示」按钮在正式版最多只能短暂显示后端回传的掩码，不能回显完整 Key。
 5. **日志脱敏**：后端日志、错误详情里不能出现 Authorization / x-api-key 明文；只记最后 4 位。
 6. **导出**：默认不带 Key；勾选「包含 API Key」时必须有明确风险提示，并建议只在本地保存。样稿已按这个交互做。
@@ -534,18 +534,26 @@ cost =
 
 ---
 
-## 11. 后端对接清单（下一阶段）
+## 11. 后端对接清单（B 阶段已落地）
 
-- [ ] `providers` / `models` / `prompt_presets` / `conversations` 落 SQLite，后端为权威。
-- [ ] Key 加密存储；所有 provider 请求走 `/api/providers/{id}/*` 代理。
-- [ ] 协议适配层：统一内部消息结构 → OpenAI / Anthropic / Gemini / Responses 三种请求体。
-- [ ] `buildReasoningParams` 用同一套映射；400 自动去参数重试 + `fallback_reasoning`。
-- [ ] usage 表按 §6.2 建表并在每次回复后写入；流式开 include_usage。
-- [ ] 统计接口：`GET /api/stats?range=today|7d|30d|90d|all`，返回总览、热力图、柱状图、排行、余额。
-- [ ] 余额接口加缓存；失败只返回 `{ supported, amount: null, failKind }`。
-- [ ] 导入导出：PNG 由后端处理；提供商/预设 JSON 由后端校验。
-- [ ] 删除样稿的 `advanced.demo400` 和 `window.__a2`。
-- [ ] localStorage 迁移：上传 Key 后清空浏览器里的明文。
+- [x] `providers` / `models` / `prompt_presets` / `characters` / `user_personas` / `world_books` / `chats` / `messages` / `memories` / `usage` / `settings` 全部落 SQLite，后端为权威。
+- [x] Key 用 Fernet 加密存 SQLite（密钥来自 `APP_SECRET`）；GET 只回 `hasKey` + `keyMasked`；所有 provider 请求走 `/api/providers/{id}/*` 代理。
+- [x] 协议适配层：统一内部消息结构 → OpenAI 兼容 / Anthropic Messages / Gemini generateContent / OpenAI Responses 四种请求体（DeepSeek、OpenRouter、中转站复用 OpenAI 兼容）。
+- [x] `buildReasoningParams` 在 `server/reasoning.py` 用同一套映射；400/422 自动去掉思考参数重试一次 + `fallback_reasoning`；模型不支持思考时绝不带参数。
+- [x] usage 表按 §6.2 建表，每次回复后写入；流式开 `stream_options.include_usage`；Anthropic / Gemini / Responses 从各自事件取 usage；拿不到时按字数估算并标 `estimated`。
+- [x] 统计接口：`GET /api/stats?range=today|7d|30d|90d|all&metric=token|cost&rank=model|provider|char`，返回总览、热力图、柱状图、排行、余额；数字全部来自 usage 表。
+- [x] 余额接口后端缓存 5 分钟；失败只返回 `{ supported, amount: null, failKind }`，界面只显示「余额暂不可查」。
+- [x] 导入导出：角色 JSON / PNG 由后端解析写出（PNG 读 `ccv3` 再读 `chara`，写出 v2 + `chara`）；世界书 / 用户设定 / 预设 / 提供商 JSON 由后端校验与代理。
+- [x] 删除样稿的 `advanced.demo400` 和 `window.__a2`；400 兜底改为真实逻辑。
+- [x] localStorage 迁移：`POST /api/migrate/local` 按 id 去重、可重复；用户确认后可连同加密上传 Key，迁移成功后前端清空本地明文 Key。
+
+### 11.1 与最初设想的差异（以实现为准）
+
+1. **聊天接口**用 `POST /api/chats/{characterId}/messages` 返回 SSE，而不是一次性的 `/api/chat/stream`；一场聊天固定属于一个角色，符合角色系统方案第 5 节。
+2. **前端整体状态**通过 `GET /api/bootstrap` + `PUT /api/state` 同步集合与绑定；聊天消息、记忆、现在卡走各自专用接口，避免整体同步覆盖流式写入。
+3. **思考参数兜底**判定为：HTTP 400/422 且错误文本包含 think / reason / budget / effort 之一；其余 400 按普通参数错误处理，不重试。
+4. **演示用 400** 改由后端环境变量 `MSYQ_MOCK_400=1`（配合 `MSYQ_MOCK=1`）模拟，仅用于本地演示与测试，正式环境不打开。
+5. **Key 的「显示」按钮**在接后端后只提示「已加密保存在服务器，界面只显示掩码」，不允许回显明文。
 
 ---
 

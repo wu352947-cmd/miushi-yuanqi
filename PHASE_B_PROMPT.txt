@@ -1,0 +1,134 @@
+你在为本机项目「缪诗鸳杞」（/workspace/miushi-yuanqi）做 B 阶段：接上真实后端。这是一个手机端 AI 陪伴应用。A / A2 阶段的前端样稿已经完成（角色库、用户设定、世界书、自定义提供商、思考档位、提示词预设、统计页、分组模型选择），数据目前全在浏览器 localStorage `msyq.v2` 里，聊天是假的。
+
+先读这些文件再动手，按已有设计实现，不要另起一套：
+- PROVIDERS_DESIGN.md（协议适配、思考参数、错误分类、usage 表、Key 存放、assemblePrompt、后端对接清单 §11）
+- CHARACTER_SYSTEM_PLAN.md 第 3、5、6.B、7 节（角色 / 用户设定 / 世界书关系和 v1 不做的事项）
+- src/ 现有前端（尤其 src/app.js 里的 classifyApiError、buildReasoningParams、assemblePrompt、数据形状）
+
+本阶段在开发机上完成并验收，不要部署，不要 SSH，不要改任何远程 VPS，不要把真实 API Key 写入仓库或截图。
+
+## 目标
+
+做一套轻量的 FastAPI + SQLite 后端，并让现有前端改走这套 API。模型计算全部调用外部接口，本机只负责：鉴权、存数据、拼提示词、转发流式请求、记用量、抽取记忆。
+
+默认监听 `127.0.0.1:8080`（可用环境变量改 host/port），同一个进程既提供 API 也托管 `dist/index.html` 和静态资源，保证同源，不需要 CORS。绑 0.0.0.0 只能通过环境变量显式打开，文档里写清楚。
+
+## 目录
+
+```
+server/
+  app.py            入口
+  auth.py
+  db.py             SQLite + 迁移
+  schemas.py
+  providers.py      协议适配（OpenAI 兼容 / Responses / Anthropic / Gemini / DeepSeek / OpenRouter）
+  reasoning.py      buildReasoningParams，与前端同一套映射
+  errors.py         classifyApiError，返回中文 kind + 短提示
+  prompts.py        assemblePrompt、世界书关键词激活（扫最近若干轮、做简单 token 预算）
+  memory.py         现在卡、主题笔记、软遗忘、自动抽取、「记住这个」
+  usage.py          从 API usage 写入并汇总统计
+  routers/          按资源拆路由
+  requirements.txt
+  .env.example
+data/               SQLite 文件（gitignore）
+```
+
+用 Python 3.11+，依赖尽量少：fastapi、uvicorn、httpx、python-dotenv、以及必要的加密库（如 cryptography）。不要引入大型 ORM 或向量库。`requirements.txt` 锁版本。`.gitignore` 排除 `.env`、`data/*.db`、`__pycache__`、`node_modules`。
+
+## 1. 数据与权威
+
+后端是权威。SQLite 里至少有这些表（名称可微调，但字段要覆盖）：
+- users（本应用先按单用户设计：一个登录账号）
+- providers、models（API Key 加密存储，接口只回掩码，绝不回明文）
+- prompt_presets
+- characters、user_personas、world_books、world_book_entries
+- chats、messages
+- memories（现在卡 / 主题笔记；状态：正常、钉住、已遗忘）
+- usage（按 PROVIDERS_DESIGN §6.2：时间、聊天、角色、提供商、模型、各类 token、耗时、是否出错、是否估算）
+- settings
+
+关系与前端 A / A2 一致：
+- 用户设定取用：这场聊天指定 > 角色默认 > 全局默认
+- 世界书：全局 + 角色一本 + 聊天一本，合并去重
+- 提示词预设：这场 > 角色默认 > 全局默认
+- 每个角色记住最近一场聊天；不做一场聊天中途换所属角色；不做群聊
+
+启动时若库是空的，把前端预置的演示数据（角色、用户设定、世界书、提供商模板、文风预设，不要带真实 Key）写入，方便打开就能看。
+
+提供一次「从浏览器迁移」接口：前端把现有 `msyq.v2`（不含明文 Key，或 Key 仅在用户确认后上传）POST 上来，成功后前端清空本地明文 Key。迁移必须可重复、幂等（按 id 去重）。
+
+## 2. 安全
+
+- 环境变量 `APP_PASSWORD`：设置了就要求登录（HttpOnly、Secure 视 HTTPS 而定、SameSite 的会话 cookie）。没设置时开发模式可免登，但日志和页面要有一句明确提示「未设置登录密码」。
+- API Key：Fernet 或等价方式加密后入库，密钥来自 `APP_SECRET`（必填，.env.example 里说明如何生成）。GET 提供商只返回掩码。导出提供商 JSON 默认不含 Key，勾选才含，并在响应里带风险标记。
+- 所有模型请求由后端发出，浏览器不再拿 Key 直连。测试连接、拉模型、查余额、聊天、记忆抽取全部走 `/api/...`。
+- 不要在日志里打印 Key、Cookie、Authorization。
+- 删除样稿里的 `window.__a2` 和 `advanced.demo400`（400 兜底改成真实逻辑）。
+
+## 3. 聊天（必须真的能流式回复）
+
+`POST /api/chats/{id}/messages`（或同等路径）接收用户消息，服务端：
+1. assemblePrompt：预设前置 → 角色设定 → 世界书（常开 + 关键词命中，扫最近若干轮，做简单预算）→ 用户设定 → 聊天记录（含深度注入）→ 预设后置 → 当前用户句
+2. 按当前模型和思考档位调用 buildReasoningParams，拼进对应协议的请求体
+3. 流式转发给浏览器（SSE 或 fetch stream）。OpenAI 兼容要带 `stream_options.include_usage`
+4. 若因思考参数返回 400：去掉思考参数自动重试一次，这条回复带 `fallback_reasoning` 标记，前端显示「这家不支持调思考深度，已按默认回复」，聊天不能因此失败
+5. 不支持思考的模型：请求里绝不带思考参数
+6. 出错时用 classifyApiError 返回中文 kind + 短提示，不要把英文原始报错丢到界面
+7. 结束后把 usage 写入表。拿不到 usage 时按字数粗估并标「估算」。没有「未知模型」：每条记录带 provider + model id + 显示名
+8. 思考过程按提供商设置决定是否回传；前端仍默认折叠为「想了 N 秒」
+
+没有配置 Key 的提供商，发送时返回清楚的中文提示「先到模型与提供商里填写 API Key」，不要崩溃。
+
+## 4. 记忆库（v1）
+
+这是本阶段要做实的核心之一，不是占位。
+
+- 人设（角色卡 + 用户设定）每次请求都带。
+- 一张「现在卡」（此刻）：可编辑，进入提示词。
+- 主题笔记：标题、正文、重要度、标签、来源（哪场聊天 / 手动）、可钉住、可搜索。
+- 默认软遗忘：遗忘只改状态，进入「已遗忘」可恢复，不真删。
+- 每聊 N 轮（默认 4，可配置）用当前模型异步抽新记忆（主题笔记或更新现在卡），写入前去重；失败不影响聊天。
+- 用户说「记住这个」或点「记住」：当场把指定内容写成一条笔记。
+- 不做向量库、图谱、自动梦境整理。搜索先做关键词 / 全文。
+
+## 5. 其它 API
+
+覆盖前端已有界面，路径风格统一，例如：
+- `/api/auth/login` `/api/auth/logout` `/api/auth/me`
+- 提供商 CRUD、启用、测试连接、拉模型、查余额（有官方接口的才查；失败只回「余额暂不可查」类字段，带缓存）
+- 模型 CRUD、收藏
+- 角色 / 用户设定 / 世界书 CRUD，JSON/PNG 导入导出改由后端解析（PNG 用 tEXt ccv3/chara，和现有逻辑一致）
+- 提示词预设 CRUD，酒馆预设 JSON 导入
+- 聊天列表、消息、模型/档位/预设/角色绑定
+- `GET /api/stats?range=today|7d|30d|90d|all`：总览、热力图、柱状图、按模型/提供商/角色排行、余额卡
+- 记忆 CRUD、遗忘/恢复、搜索、记住
+
+前端改走这些接口。离线打开 `dist/index.html`（file://）时可以保留只读/本地降级，但通过服务器打开时必须以后端为准。界面、主题、底栏不要重做。
+
+## 6. 不能动 / 不要做
+
+- 底栏 66px、四图标齐平、爱心选中只变色不跳不凸不放大；「此刻」编辑按钮仍在正文下方文档流。
+- 两套主题、按需壁纸、动画只用 transform / opacity，不要引入会卡中端手机的库。
+- 不做：Postgres、向量库、本地大模型、图谱、3D、一起听的真实网易云对接、语音、主动找你、来电、商城。
+- 世界书 v1 只做常开 / 关键词 + 简单预算，不做递归激活、概率/冷却、正则引擎。
+- 不把酒馆源码或 UI 拷进来。
+- 不要运行 `scripts/shoot.mjs`（会清空 shots/）。
+- 不要把真实 Key、密码、APP_SECRET 写进 git、README、截图或检查文件。
+
+## 7. 文档与自检
+
+- 写 `server/README.md`（或在仓库 README 里加一节，语气按通用开源项目：如何配置、启动、环境变量、API 概要）。不要写本机路径、个人背景、具体服务器地址。
+- 更新 PROVIDERS_DESIGN.md 里已落地的对接清单。
+- `.env.example` 列出：`APP_SECRET`、`APP_PASSWORD`、`HOST`、`PORT`。
+- 用 pytest 覆盖：拼装顺序、思考参数映射、400 重试、错误分类、usage 汇总（含估算标记）、软遗忘、迁移幂等、Key 不会出现在 GET 响应里。能用 httpx 对本地应用做 API 测试就做，模型调用用 mock。
+- 自己启动服务，用 headless Chrome（390×844）在粉 / 冰蓝下截图到 `shots/phase-b/`：登录（若开启）、聊天真实流式（若环境没有 Key，就演示「请填写 Key」的中文提示，并另用 mock 或可注入的测试 Key 走通流式链路的截图/录日志）、思考档位、统计页数字来自 usage 表、记忆的新增/遗忘/记住、提供商测试连接的中文错误、角色导入。
+- 写 `PHASE_B_CHECK.md`：完成项、测试结果、截图清单、本阶段没做的事、如何启动。
+- 开工前若 `dist/index.before-phase-b.html` 不存在，把当前 `dist/index.html` 复制一份。改前端后重新 `node scripts/build.mjs`。
+
+## 验收
+
+- `python -m pytest` 通过。
+- `node scripts/build.mjs` 通过。
+- 服务能在 127.0.0.1:8080 启动；打开页面能登录（或看到未设密码的提示）、能用现有界面发消息；无 Key 时有中文提示而不是白屏或英文堆栈。
+- 控制台无报错；底栏和「此刻」约束仍满足；A / A2 功能在有后端时仍可用。
+- 最后输出一段中文 FINAL 总结：起了哪些服务、测了什么、没做什么、如何启动。

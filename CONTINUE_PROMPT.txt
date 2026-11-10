@@ -1,0 +1,1 @@
+继续完成 D 轮：读 PHASE_D_PROMPT.md，从中断处接着做。四块按顺序，每块做完跑 pytest 和构建。玻璃参数、底栏和「此刻」不准回退；不准用代码画壁纸；粉色主题用 assets/wallpapers-720/wp18.jpg（浅粉拼贴 · 凯蒂猫），不要改颜色或另画。不要运行 scripts/shoot.mjs，不要部署。

@@ -8,7 +8,7 @@ const DATA = {
       label: "粉色",
       quote: "今天有雨。伞在门边，灯也留着。",
       pages: {
-        home: "wp01", chat: "wp13", memory: "wp14", listen: "wp03", me: "wp04",
+        home: "wp18", chat: "wp13", memory: "wp14", listen: "wp03", me: "wp04",
         settings: "wp02", characters: "wp06", personas: "wp02", books: "wp07",
         providers: "wp06", presets: "wp07", stats: "wp15"
       }
@@ -17,7 +17,7 @@ const DATA = {
       label: "冰蓝",
       quote: "窗上起了雾，替你在玻璃上写了一个字。",
       pages: {
-        home: "wp17", chat: "wp12", memory: "wp08", listen: "wp09", me: "wp11",
+        home: "wp09", chat: "wp12", memory: "wp08", listen: "wp09", me: "wp11",
         settings: "wp16", characters: "wp16", personas: "wp11", books: "wp12",
         providers: "wp16", presets: "wp10", stats: "wp12"
       }
@@ -41,7 +41,8 @@ const DATA = {
 
   wallpaperList: [
     "wp01", "wp02", "wp03", "wp04", "wp05", "wp06", "wp07", "wp08", "wp09",
-    "wp10", "wp11", "wp12", "wp13", "wp14", "wp15", "wp16", "wp17"
+    "wp18",
+    "wp10", "wp11", "wp12", "wp13", "wp14", "wp15", "wp16", "wp17", "wp18"
   ],
 
   wallpaperNote: {
@@ -50,7 +51,7 @@ const DATA = {
     wp07: "信笺拼贴 · 天鹅", wp08: "冰花结晶 · 清冷", wp09: "水面波光 · 樱",
     wp10: "冰蓝置物架 · 大耳犬", wp11: "星点权杖 · 干净", wp12: "淡星空 · 留白",
     wp13: "粉格纹 · 小羊", wp14: "粉白格纹 · 小羊线稿", wp15: "白蕾丝 · 小狗三格",
-    wp16: "冰蓝格纹 · 蝴蝶结", wp17: "冰蓝蕾丝 · 心形小动物"
+    wp16: "冰蓝格纹 · 蝴蝶结", wp17: "冰蓝蕾丝 · 心形小动物", wp18: "浅粉拼贴 · 凯蒂猫"
   },
 
   /*
@@ -181,7 +182,7 @@ const DATA = {
       baseUrl: "https://api.deepseek.com", apiPath: "/chat/completions", apiKey: "",
       enabled: true, models: ["model-deepseek-chat"],
       balance: { supported: true, amount: 12.4, currency: "¥", at: "11月10日 21:20" },
-      advanced: { responseApi: false, returnThinking: true, fetchBalance: true, demo400: false, timeout: 45 },
+      advanced: { responseApi: false, returnThinking: true, fetchBalance: true, timeout: 45 },
       source: "preset", extras: {}
     },
     {
@@ -189,7 +190,7 @@ const DATA = {
       baseUrl: "https://api.anthropic.com", apiPath: "/v1/messages", apiKey: "",
       enabled: true, models: ["model-claude-sonnet"],
       balance: { supported: false, amount: 0, currency: "¥", at: "" },
-      advanced: { responseApi: false, returnThinking: true, fetchBalance: false, demo400: false, timeout: 60 },
+      advanced: { responseApi: false, returnThinking: true, fetchBalance: false, timeout: 60 },
       source: "preset", extras: {}
     },
     {
@@ -197,7 +198,7 @@ const DATA = {
       baseUrl: "https://api.openai.com/v1", apiPath: "/chat/completions", apiKey: "",
       enabled: false, models: ["model-gpt5"],
       balance: { supported: false, amount: 0, currency: "¥", at: "" },
-      advanced: { responseApi: true, returnThinking: true, fetchBalance: false, demo400: false, timeout: 60 },
+      advanced: { responseApi: true, returnThinking: true, fetchBalance: false, timeout: 60 },
       source: "preset", extras: {}
     },
     {
@@ -205,7 +206,7 @@ const DATA = {
       baseUrl: "https://generativelanguage.googleapis.com", apiPath: "/v1beta/models/{model}:generateContent", apiKey: "",
       enabled: true, models: ["model-gemini-pro", "model-gemini-flash"],
       balance: { supported: false, amount: 0, currency: "¥", at: "" },
-      advanced: { responseApi: false, returnThinking: true, fetchBalance: false, demo400: false, timeout: 60 },
+      advanced: { responseApi: false, returnThinking: true, fetchBalance: false, timeout: 60 },
       source: "preset", extras: {}
     },
     {
@@ -213,7 +214,7 @@ const DATA = {
       baseUrl: "https://openrouter.ai/api/v1", apiPath: "/chat/completions", apiKey: "",
       enabled: true, models: ["model-openrouter-auto", "model-openrouter-kimi"],
       balance: { supported: true, amount: 8.2, currency: "$", at: "11月10日 21:18" },
-      advanced: { responseApi: false, returnThinking: true, fetchBalance: true, demo400: false, timeout: 60 },
+      advanced: { responseApi: false, returnThinking: true, fetchBalance: true, timeout: 60 },
       source: "preset", extras: {}
     },
     {
@@ -221,7 +222,7 @@ const DATA = {
       baseUrl: "https://api.siliconflow.cn/v1", apiPath: "/chat/completions", apiKey: "",
       enabled: true, models: ["model-qwen3", "model-qwen25"],
       balance: { supported: false, amount: 0, currency: "¥", at: "" },
-      advanced: { responseApi: false, returnThinking: false, fetchBalance: false, demo400: false, timeout: 45 },
+      advanced: { responseApi: false, returnThinking: false, fetchBalance: false, timeout: 45 },
       source: "preset", extras: {}
     },
     {
@@ -229,7 +230,7 @@ const DATA = {
       baseUrl: "https://relay.bailu.example/v1", apiPath: "/chat/completions", apiKey: "",
       enabled: true, models: ["model-bailu-lite", "model-bailu-slow"],
       balance: { supported: false, amount: 0, currency: "¥", at: "" },
-      advanced: { responseApi: false, returnThinking: true, fetchBalance: false, demo400: true, timeout: 45 },
+      advanced: { responseApi: false, returnThinking: true, fetchBalance: false, timeout: 45 },
       source: "preset", extras: { note: "样稿示例中转站：用来演示 400 兜底与模型名区分档位" }
     }
   ],
@@ -240,76 +241,23 @@ const DATA = {
    * price 为每百万 token 的价格（输入 / 缓存命中输入 / 输出），currency 为 ¥ 或 $
    */
   modelRegistry: [
-    {
-      id: "model-deepseek-chat", providerId: "prov-deepseek", name: "DeepSeek V3.2", modelId: "deepseek-chat",
-      icon: "deepseek", caps: { vision: false, tools: true, reasoning: true }, context: 131072, favorite: true,
-      source: "preset", price: { input: 2, cache: 0.2, output: 3, currency: "¥" },
-      reasoning: { mode: "deepseek", levels: ["off", "on"], defaultLevel: "on", note: "DeepSeek 官方只有关闭 / 开启两档，不假装有低中高" }
-    },
-    {
-      id: "model-claude-sonnet", providerId: "prov-anthropic", name: "Claude Sonnet 4.5", modelId: "claude-sonnet-4-5",
-      icon: "claude", caps: { vision: true, tools: true, reasoning: true }, context: 200000, favorite: true,
-      source: "preset", price: { input: 3, cache: 0.3, output: 15, currency: "$" },
-      reasoning: { mode: "anthropic_budget", levels: ["off", "auto", "low", "medium", "high"], defaultLevel: "high", note: "thinking.budget_tokens，会保证 max_tokens 大于 budget" }
-    },
-    {
-      id: "model-gpt5", providerId: "prov-openai", name: "GPT-5", modelId: "gpt-5",
-      icon: "openai", caps: { vision: true, tools: true, reasoning: true }, context: 400000, favorite: false,
-      source: "preset", price: { input: 1.25, cache: 0.125, output: 10, currency: "$" },
-      reasoning: { mode: "openai_effort", levels: ["off", "auto", "low", "medium", "high"], defaultLevel: "auto", note: "reasoning.effort（Responses 协议）" }
-    },
-    {
-      id: "model-gemini-pro", providerId: "prov-gemini", name: "Gemini 2.5 Pro", modelId: "gemini-2.5-pro",
-      icon: "gemini", caps: { vision: true, tools: true, reasoning: true }, context: 1048576, favorite: false,
-      source: "preset", price: { input: 1.25, cache: 0.31, output: 10, currency: "$" },
-      reasoning: { mode: "gemini_budget", levels: ["off", "auto", "low", "medium", "high"], defaultLevel: "auto", note: "thinkingConfig.thinkingBudget" }
-    },
-    {
-      id: "model-gemini-flash", providerId: "prov-gemini", name: "Gemini 2.5 Flash", modelId: "gemini-2.5-flash",
-      icon: "gemini", caps: { vision: true, tools: true, reasoning: true }, context: 1048576, favorite: true,
-      source: "preset", price: { input: 0.3, cache: 0.075, output: 2.5, currency: "$" },
-      reasoning: { mode: "gemini_budget", levels: ["off", "auto", "low", "medium", "high"], defaultLevel: "low", note: "thinkingConfig.thinkingBudget" }
-    },
-    {
-      id: "model-openrouter-auto", providerId: "prov-openrouter", name: "OpenRouter 自动", modelId: "openrouter/auto",
-      icon: "openrouter", caps: { vision: false, tools: true, reasoning: true }, context: 200000, favorite: false,
-      source: "preset", price: { input: 0.5, cache: 0, output: 1.5, currency: "$" },
-      reasoning: { mode: "openrouter", levels: ["off", "auto", "low", "medium", "high", "max"], defaultLevel: "auto", note: "reasoning.effort / max_tokens" }
-    },
-    {
-      id: "model-openrouter-kimi", providerId: "prov-openrouter", name: "Kimi K2", modelId: "moonshotai/kimi-k2",
-      icon: "kimi", caps: { vision: false, tools: true, reasoning: true }, context: 131072, favorite: true,
-      source: "preset", price: { input: 0.6, cache: 0.15, output: 2.5, currency: "$" },
-      reasoning: { mode: "openrouter", levels: ["off", "auto", "low", "medium", "high"], defaultLevel: "medium", note: "reasoning.effort" }
-    },
-    {
-      id: "model-qwen3", providerId: "prov-siliconcloud", name: "Qwen3 235B", modelId: "Qwen/Qwen3-235B-A22B",
-      icon: "qwen", caps: { vision: false, tools: true, reasoning: false }, context: 131072, favorite: false,
-      source: "preset", price: { input: 0.35, cache: 0.035, output: 1.4, currency: "¥" },
-      reasoning: { mode: "none", levels: [], defaultLevel: "off", note: "这家固定模型，不能调思考深度" }
-    },
-    {
-      id: "model-qwen25", providerId: "prov-siliconcloud", name: "Qwen2.5 7B", modelId: "Qwen/Qwen2.5-7B-Instruct",
-      icon: "qwen", caps: { vision: false, tools: false, reasoning: false }, context: 32768, favorite: false,
-      source: "preset", price: { input: 0, cache: 0, output: 0, currency: "¥" },
-      reasoning: { mode: "none", levels: [], defaultLevel: "off", note: "小模型，不能调思考深度" }
-    },
-    {
-      id: "model-bailu-lite", providerId: "prov-bailu", name: "白露 · 轻", modelId: "bailu-lite",
-      icon: "generic", caps: { vision: false, tools: false, reasoning: false }, context: 32768, favorite: false,
-      source: "preset", price: { input: 1, cache: 0, output: 2, currency: "¥" },
-      reasoning: { mode: "none", levels: [], defaultLevel: "off", note: "这个模型不能调思考深度" }
-    },
-    {
-      id: "model-bailu-slow", providerId: "prov-bailu", name: "白露 · 慢", modelId: "bailu-slow",
-      icon: "generic", caps: { vision: false, tools: true, reasoning: true }, context: 65536, favorite: false,
-      source: "preset", price: null,
-      reasoning: {
-        mode: "relay_suffix", levels: ["off", "low", "high"], defaultLevel: "off",
-        map: { off: "bailu-slow", low: "bailu-slow", high: "bailu-slow-thinking" },
-        note: "这家用模型名区分档位：高档切到 bailu-slow-thinking"
-      }
-    }
+    {"id": "model-deepseek-flash", "providerId": "prov-deepseek", "name": "DeepSeek V4.1 Flash", "modelId": "deepseek-flash", "icon": "deepseek", "caps": {"vision": true, "tools": true, "reasoning": true}, "context": 1048576, "favorite": true, "source": "preset", "price": {"currency": "¥", "peak": {"input": 2, "cache": 0.04, "output": 8}, "offpeak": {"input": 1, "cache": 0.02, "output": 4}}, "reasoning": {"mode": "deepseek", "levels": ["off", "low", "high", "max"], "defaultLevel": "high", "note": "官方 thinking + reasoning_effort；官方 medium/xhigh 收敛为 high"}},
+    {"id": "model-deepseek-pro", "providerId": "prov-deepseek", "name": "DeepSeek V4 Pro", "modelId": "deepseek-v4-pro", "icon": "deepseek", "caps": {"vision": false, "tools": true, "reasoning": true}, "context": 1048576, "favorite": false, "source": "preset", "price": {"currency": "¥", "peak": {"input": 9, "cache": 0.3, "output": 27}, "offpeak": {"input": 4.5, "cache": 0.15, "output": 13.5}}, "reasoning": {"mode": "deepseek", "levels": ["off", "low", "high", "max"], "defaultLevel": "high", "note": "官方 thinking + reasoning_effort"}},
+    {"id": "model-claude-sonnet-5-5", "providerId": "prov-anthropic", "name": "Claude Sonnet 5.5", "modelId": "claude-sonnet-5-5", "icon": "claude", "caps": {"vision": true, "tools": true, "reasoning": true}, "context": 1000000, "favorite": true, "source": "preset", "price": {"input": 2, "cache": 0.1, "output": 10, "currency": "$"}, "reasoning": {"mode": "anthropic_effort", "levels": ["off", "auto", "low", "medium", "high", "xhigh", "max"], "defaultLevel": "high", "offMode": "between_tools", "note": "output_config.effort；这家关闭思考用 between_tools，不允许 disabled"}},
+    {"id": "model-claude-haiku-5-5", "providerId": "prov-anthropic", "name": "Claude Haiku 5.5", "modelId": "claude-haiku-5-5", "icon": "claude", "caps": {"vision": true, "tools": true, "reasoning": true}, "context": 200000, "favorite": false, "source": "preset", "price": {"input": 0.1, "cache": 0.01, "output": 0.5, "currency": "$"}, "reasoning": {"mode": "anthropic_effort", "levels": ["off", "auto", "low", "medium", "high", "xhigh", "max"], "defaultLevel": "medium", "offMode": "disabled", "note": "output_config.effort；>100K 输入价格另计"}},
+    {"id": "model-gpt6-sol", "providerId": "prov-openai", "name": "GPT-6.1 Sol", "modelId": "gpt-6.1-sol", "icon": "openai", "caps": {"vision": true, "tools": true, "reasoning": true}, "context": 1050000, "favorite": true, "source": "preset", "price": {"input": 2, "cache": 0.1, "output": 10, "currency": "$"}, "reasoning": {"mode": "openai_effort", "levels": ["low", "medium", "high", "xhigh", "max"], "defaultLevel": "medium", "note": "没有关闭档；Responses 发 reasoning.effort + summary"}},
+    {"id": "model-gpt6-luna", "providerId": "prov-openai", "name": "GPT-6 Luna", "modelId": "gpt-6-luna", "icon": "openai", "caps": {"vision": true, "tools": true, "reasoning": true}, "context": 1050000, "favorite": false, "source": "preset", "price": {"input": 0.1, "cache": 0.01, "output": 0.5, "currency": "$"}, "reasoning": {"mode": "openai_effort", "levels": ["off", "auto", "low", "medium", "high", "xhigh", "max"], "defaultLevel": "medium", "note": "off 映射 none；>272K 输入价格另计"}},
+    {"id": "model-gpt6-astra", "providerId": "prov-openai", "name": "GPT-6 Astra", "modelId": "gpt-6-astra", "icon": "openai", "caps": {"vision": true, "tools": true, "reasoning": true}, "context": 1050000, "favorite": false, "source": "preset", "price": {"input": 2, "cache": 0.1, "output": 10, "currency": "$"}, "reasoning": {"mode": "openai_effort", "levels": ["low", "medium", "high", "xhigh", "max"], "defaultLevel": "high", "note": "没有 off；对 gpt-6-astra 发 none 会 400"}},
+    {"id": "model-gpt6-terra", "providerId": "prov-openai", "name": "GPT-6.1 Terra", "modelId": "gpt-6.1-terra", "icon": "openai", "caps": {"vision": true, "tools": true, "reasoning": true}, "context": 1050000, "favorite": false, "source": "preset", "price": {"input": 0.25, "cache": 0.025, "output": 2, "currency": "$"}, "reasoning": {"mode": "openai_effort", "levels": ["off", "auto", "low", "medium", "high", "xhigh", "max"], "defaultLevel": "medium", "note": "off 映射 none"}},
+    {"id": "model-gemini38", "providerId": "prov-gemini", "name": "Gemini 3.8 Flash", "modelId": "gemini-3.8-flash", "icon": "gemini", "caps": {"vision": true, "tools": true, "reasoning": true}, "context": 1048576, "favorite": true, "source": "preset", "price": {"currency": "$", "input": 0.75, "cache": 0.075, "output": 3.75, "next": {"effectiveFrom": "2027-01-01", "input": 1.5, "cache": 0.15, "output": 7.5}}, "reasoning": {"mode": "gemini_level", "levels": ["auto", "low", "medium", "high"], "defaultLevel": "auto", "supportsMinimal": false, "note": "thinkingLevel；不提供 off"}},
+    {"id": "model-gemini4", "providerId": "prov-gemini", "name": "Gemini 4 Argon", "modelId": "gemini-4-argon", "icon": "gemini", "caps": {"vision": true, "tools": true, "reasoning": true}, "context": 1048576, "favorite": false, "source": "preset", "price": {"currency": "$", "input": 2, "cache": 0.1, "output": 10, "next": {"effectiveFrom": "2026-12-01", "input": 4, "cache": 0.2, "output": 20}}, "reasoning": {"mode": "gemini_level", "levels": ["auto", "low", "medium", "high"], "defaultLevel": "auto", "supportsMinimal": false, "note": "thinkingLevel；无免费档、不提供 off"}},
+    {"id": "model-gemini35-lite", "providerId": "prov-gemini", "name": "Gemini 3.5 Flash-Lite", "modelId": "gemini-3.5-flash-lite", "icon": "gemini", "caps": {"vision": true, "tools": true, "reasoning": true}, "context": 1048576, "favorite": false, "source": "preset", "price": {"input": 0.3, "cache": 0.03, "output": 2.5, "currency": "$"}, "reasoning": {"mode": "gemini_level", "levels": ["off", "auto", "low", "medium", "high"], "defaultLevel": "auto", "supportsMinimal": true, "note": "off 映射 minimal（几乎不思考）"}},
+    {"id": "model-openrouter-auto", "providerId": "prov-openrouter", "name": "OpenRouter 自动", "modelId": "openrouter/auto", "icon": "openrouter", "caps": {"vision": false, "tools": true, "reasoning": false}, "context": 200000, "favorite": false, "source": "preset", "price": null, "reasoning": {"mode": "none", "levels": [], "defaultLevel": "off", "note": "没有 reasoning 字段，不能调思考档位"}},
+    {"id": "model-openrouter-kimi", "providerId": "prov-openrouter", "name": "Kimi K3（OpenRouter）", "modelId": "moonshotai/kimi-k3", "icon": "kimi", "caps": {"vision": false, "tools": true, "reasoning": true}, "context": 262144, "favorite": true, "source": "preset", "price": null, "reasoning": {"mode": "openrouter", "levels": ["off", "auto", "low", "medium", "high", "xhigh", "max"], "defaultLevel": "high", "supportedEfforts": ["none", "low", "medium", "high", "xhigh", "max"], "mandatory": false, "note": "由 /api/v1/models 的 reasoning 字段生成；价格实时取"}},
+    {"id": "model-qwen3", "providerId": "prov-siliconcloud", "name": "Qwen3 235B", "modelId": "Qwen/Qwen3-235B-A22B", "icon": "qwen", "caps": {"vision": false, "tools": true, "reasoning": true}, "context": 131072, "favorite": false, "source": "preset", "price": null, "reasoning": {"mode": "siliconflow_thinking", "levels": ["off", "auto", "low", "medium", "high"], "defaultLevel": "medium", "note": "默认开思考：enable_thinking + thinking_budget；价格待确认"}},
+    {"id": "model-glm52", "providerId": "prov-siliconcloud", "name": "GLM-5.2（硅基）", "modelId": "zai-org/GLM-5.2", "icon": "generic", "caps": {"vision": false, "tools": true, "reasoning": true}, "context": 131072, "favorite": false, "source": "preset", "price": null, "reasoning": {"mode": "siliconflow_thinking", "levels": ["off", "auto", "low", "high", "max"], "defaultLevel": "max", "note": "DeepSeek-V4 / GLM-5.2 走 reasoning_effort；价格待确认"}},
+    {"id": "model-bailu-lite", "providerId": "prov-bailu", "name": "白露 · 轻", "modelId": "bailu-lite", "icon": "generic", "caps": {"vision": false, "tools": false, "reasoning": false}, "context": 32768, "favorite": false, "source": "preset", "price": {"input": 1, "cache": 0, "output": 2, "currency": "¥"}, "reasoning": {"mode": "none", "levels": [], "defaultLevel": "off", "note": "这个模型不能调思考深度"}},
+    {"id": "model-bailu-slow", "providerId": "prov-bailu", "name": "白露 · 慢", "modelId": "bailu-slow", "icon": "generic", "caps": {"vision": false, "tools": true, "reasoning": true}, "context": 65536, "favorite": false, "source": "preset", "price": null, "reasoning": {"mode": "relay_suffix", "levels": ["off", "low", "high"], "defaultLevel": "off", "map": {"off": "bailu-slow", "low": "bailu-slow", "high": "bailu-slow-thinking"}, "note": "这家用模型名区分档位"}}
   ],
 
   /* 提示词预设：名称 + 提示词片段 + 采样参数（null = 不设置，用模型默认） */
@@ -407,13 +355,13 @@ const DATA = {
       source: "来自 10月19日 的对话"
     },
     {
-      id: "m4", cat: "我们", title: "平潭的风", importance: 9, pinned: false, protected: false,
+      id: "m4", cat: "我们", title: "十一月二日，平潭", importance: 9, pinned: false, protected: false,
       body: "十一月二日，平潭。风大得听不清耳机，你把围巾分了我一半。那天没有日落，只有很长的灰蓝色。",
       source: "来自 11月2日 一起听记录"
     },
     {
       id: "m5", cat: "我们", title: "一起听的第一首", importance: 7, pinned: false, protected: false,
-      body: "《平潭的风》。你点了播放，然后把手机放在两个人中间。后来每次听到前奏，房间都会变安静。",
+      body: "《云烟成雨》。你点了播放，然后把手机放在两个人中间。后来每次听到前奏，房间都会变安静。",
       source: "来自 11月2日 一起听记录"
     },
     {
@@ -505,29 +453,34 @@ const DATA = {
     "好。等你想说的时候，我还在。"
   ],
 
+  /*
+   * 网易云真实歌曲：歌名 / 歌手 / 时长与原曲一致，neteaseId 为网易云歌曲 id，
+   * coverUrl 为专辑封面原始 picUrl（p1/p2.music.126.net）；显示时加 ?param=300y300
+   * 由手机直接向网易云图片服务器取图，不经过本机后端、也不打包进 dist。
+   */
   playlists: [
     {
       name: "雨天与旧信", desc: "给福州入秋的雨",
       songs: [
-        { title: "平潭的风", artist: "海边邮局", dur: 238, note: "她说：这首像福州雨停之后的走廊。" },
-        { title: "旧信", artist: "林予安", dur: 264, note: "她说：唱到第二段的时候，你一般会安静下来。" },
-        { title: "雨落在法学院的台阶上", artist: "白露社", dur: 221, note: "她说：台阶上的水会反光，像很浅的镜子。" },
-        { title: "慢一格", artist: "未眠电台", dur: 198, note: "她说：音量小一格，刚好够听见你呼吸。" }
+        { title: "云烟成雨", artist: "房东的猫", dur: 241, neteaseId: 513360721, album: "云烟成雨", coverUrl: "https://p2.music.126.net/DSTg1dR7yKsyGq4IK3NL8A==/109951163046050093.jpg", note: "她说：这首像福州雨停之后的走廊。" },
+        { title: "秋酿", artist: "房东的猫", dur: 226, neteaseId: 30635613, album: "房东的猫", coverUrl: "https://p1.music.126.net/XSCmc9ZbWcpeizDya2g6JQ==/18598239185572641.jpg", note: "她说：唱到第二段的时候，你一般会安静下来。" },
+        { title: "走马", artist: "陈粒", dur: 236, neteaseId: 30431367, album: "如也", coverUrl: "https://p1.music.126.net/VuJFMbXzpAProbJPoXLv7g==/7721870161993398.jpg", note: "她说：台阶上的水会反光，像很浅的镜子。" },
+        { title: "你飞到城市另一边", artist: "好妹妹乐队", dur: 347, neteaseId: 26145723, album: "春生", coverUrl: "https://p2.music.126.net/-miwFGJUNbUoT6FOLBfjCg==/18568552371584657.jpg", note: "她说：音量小一格，刚好够听见你呼吸。" }
       ]
     },
     {
       name: "睡前很轻", desc: "音量小一格",
       songs: [
-        { title: "温水", artist: "林予安", dur: 203, note: "她说：喝完这杯，就该睡了。" },
-        { title: "门灯", artist: "海边邮局", dur: 247, note: "她说：留着灯，是留给回家的人。" },
-        { title: "晚安之前", artist: "白露社", dur: 189, note: "她说：这首歌只有一句歌词有用。" }
+        { title: "水星记", artist: "郭顶", dur: 325, neteaseId: 441491828, album: "飞行器的执行周期", coverUrl: "https://p1.music.126.net/wSMfGvFzOAYRU_yVIfquAA==/2946691248081599.jpg", note: "她说：喝完这杯，就该睡了。" },
+        { title: "我想和你虚度时光", artist: "程璧/莫西子诗", dur: 510, neteaseId: 30706318, album: "我想和你虚度时光", coverUrl: "https://p1.music.126.net/beK0Y-4vgyZoIy21QFXC0A==/7696581394971660.jpg", note: "她说：留着灯，是留给回家的人。" },
+        { title: "理想三旬", artist: "陈鸿宇", dur: 211, neteaseId: 31445772, album: "浓烟下的诗歌电台", coverUrl: "https://p1.music.126.net/ryk8Gu64rOhlYn0pc2Q8Ww==/109951168090271827.jpg", note: "她说：这首歌只有一句歌词有用。" }
       ]
     },
     {
-      name: "平潭的风（现场）", desc: "那天风很大",
+      name: "那天的风", desc: "十一月二日，平潭",
       songs: [
-        { title: "围巾分你一半", artist: "海边邮局", dur: 232, note: "她说：风把耳机吹得听不清，你笑了。" },
-        { title: "海边的走廊", artist: "白露社", dur: 256, note: "她说：灰蓝色的那天，其实很好看。" }
+        { title: "儿时", artist: "刘昊霖", dur: 261, neteaseId: 407761576, album: "鱼干铺里", coverUrl: "https://p2.music.126.net/2q8ThUAEszBuxGlGJz8XUw==/17731824021476100.jpg", note: "她说：风把耳机吹得听不清，你笑了。" },
+        { title: "借我", artist: "谢春花", dur: 257, neteaseId: 408814900, album: "算云烟", coverUrl: "https://p2.music.126.net/Eg4cy0_HIF2nrX2gMCsWkQ==/17967119509636556.jpg", note: "她说：灰蓝色的那天，其实很好看。" }
       ]
     }
   ],
