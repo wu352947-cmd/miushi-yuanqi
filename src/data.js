@@ -180,7 +180,7 @@ const DATA = {
     {
       id: "prov-deepseek", name: "DeepSeek", icon: "deepseek", protocol: "deepseek",
       baseUrl: "https://api.deepseek.com", apiPath: "/chat/completions", apiKey: "",
-      enabled: true, models: ["model-deepseek-chat"],
+      enabled: true, models: ["model-deepseek-flash", "model-deepseek-pro"],
       balance: { supported: true, amount: 12.4, currency: "¥", at: "11月10日 21:20" },
       advanced: { responseApi: false, returnThinking: true, fetchBalance: true, timeout: 45 },
       source: "preset", extras: {}
@@ -188,7 +188,7 @@ const DATA = {
     {
       id: "prov-anthropic", name: "Anthropic", icon: "claude", protocol: "anthropic",
       baseUrl: "https://api.anthropic.com", apiPath: "/v1/messages", apiKey: "",
-      enabled: true, models: ["model-claude-sonnet"],
+      enabled: true, models: ["model-claude-sonnet-5-5", "model-claude-haiku-5-5"],
       balance: { supported: false, amount: 0, currency: "¥", at: "" },
       advanced: { responseApi: false, returnThinking: true, fetchBalance: false, timeout: 60 },
       source: "preset", extras: {}
@@ -196,7 +196,7 @@ const DATA = {
     {
       id: "prov-openai", name: "OpenAI", icon: "openai", protocol: "openai",
       baseUrl: "https://api.openai.com/v1", apiPath: "/chat/completions", apiKey: "",
-      enabled: false, models: ["model-gpt5"],
+      enabled: false, models: ["model-gpt6-sol", "model-gpt6-luna", "model-gpt6-astra", "model-gpt6-terra"],
       balance: { supported: false, amount: 0, currency: "¥", at: "" },
       advanced: { responseApi: true, returnThinking: true, fetchBalance: false, timeout: 60 },
       source: "preset", extras: {}
@@ -204,7 +204,7 @@ const DATA = {
     {
       id: "prov-gemini", name: "Google Gemini", icon: "gemini", protocol: "gemini",
       baseUrl: "https://generativelanguage.googleapis.com", apiPath: "/v1beta/models/{model}:generateContent", apiKey: "",
-      enabled: true, models: ["model-gemini-pro", "model-gemini-flash"],
+      enabled: true, models: ["model-gemini38", "model-gemini4", "model-gemini35-lite"],
       balance: { supported: false, amount: 0, currency: "¥", at: "" },
       advanced: { responseApi: false, returnThinking: true, fetchBalance: false, timeout: 60 },
       source: "preset", extras: {}
@@ -220,7 +220,7 @@ const DATA = {
     {
       id: "prov-siliconcloud", name: "硅基流动", icon: "siliconcloud", protocol: "openai",
       baseUrl: "https://api.siliconflow.cn/v1", apiPath: "/chat/completions", apiKey: "",
-      enabled: true, models: ["model-qwen3", "model-qwen25"],
+      enabled: true, models: ["model-qwen3", "model-glm52"],
       balance: { supported: false, amount: 0, currency: "¥", at: "" },
       advanced: { responseApi: false, returnThinking: false, fetchBalance: false, timeout: 45 },
       source: "preset", extras: {}
@@ -514,10 +514,10 @@ const DATA = {
   var seed = 20261111;
   function rnd() { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; }
   var catalog = [
-    { p: "prov-deepseek", m: "model-deepseek-chat", n: "DeepSeek V3.2", cacheRate: 0.55 },
-    { p: "prov-anthropic", m: "model-claude-sonnet", n: "Claude Sonnet 4.5", cacheRate: 0.34 },
-    { p: "prov-gemini", m: "model-gemini-flash", n: "Gemini 2.5 Flash", cacheRate: 0.42 },
-    { p: "prov-openrouter", m: "model-openrouter-kimi", n: "Kimi K2", cacheRate: 0.3 },
+    { p: "prov-deepseek", m: "model-deepseek-flash", n: "DeepSeek V4.1 Flash", cacheRate: 0.55 },
+    { p: "prov-anthropic", m: "model-claude-sonnet-5-5", n: "Claude Sonnet 5.5", cacheRate: 0.34 },
+    { p: "prov-gemini", m: "model-gemini38", n: "Gemini 3.8 Flash", cacheRate: 0.42 },
+    { p: "prov-openrouter", m: "model-openrouter-kimi", n: "Kimi K3（OpenRouter）", cacheRate: 0.3 },
     { p: "prov-bailu", m: "model-bailu-slow", n: "白露 · 慢", cacheRate: 0.18 }
   ];
   var chars = ["miao", "qi", "char-lin"];

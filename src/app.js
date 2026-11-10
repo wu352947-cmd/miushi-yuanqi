@@ -137,6 +137,72 @@
     return null;
   }
 
+
+  var RETIRED_PRESET_MODELS = {
+    'model-deepseek-chat': 'model-deepseek-flash',
+    'model-claude-sonnet': 'model-claude-sonnet-5-5',
+    'model-claude-sonnet-4-5': 'model-claude-sonnet-5-5',
+    'model-gpt5': 'model-gpt6-sol',
+    'model-gpt-5': 'model-gpt6-sol',
+    'model-gpt5-mini': 'model-gpt6-luna',
+    'model-o4-mini': 'model-gpt6-luna',
+    'model-gemini-pro': 'model-gemini4',
+    'model-gemini-flash': 'model-gemini38',
+    'model-qwen25': 'model-glm52'
+  };
+
+  function mergePresetCatalog(st) {
+    if (!st) return st;
+    var catalog = clone(DATA.modelRegistry) || [];
+    var freshById = {};
+    catalog.forEach(function (m) { freshById[m.id] = m; });
+    var kept = [];
+    var seen = {};
+    (st.models || []).forEach(function (m) {
+      if (!m || !m.id) return;
+      if (RETIRED_PRESET_MODELS[m.id]) return;
+      if (freshById[m.id]) {
+        var next = clone(freshById[m.id]);
+        if (typeof m.favorite === 'boolean') next.favorite = m.favorite;
+        kept.push(next);
+        seen[m.id] = true;
+      } else if (m.source !== 'preset') {
+        kept.push(m);
+      }
+    });
+    catalog.forEach(function (m) {
+      if (!seen[m.id]) kept.push(clone(m));
+    });
+    st.models = kept;
+
+    var idsByProv = {};
+    kept.forEach(function (m) {
+      if (!idsByProv[m.providerId]) idsByProv[m.providerId] = [];
+      idsByProv[m.providerId].push(m.id);
+    });
+    (st.providers || []).forEach(function (p) {
+      var catalogIds = idsByProv[p.id] || [];
+      var userIds = (p.models || []).filter(function (id) {
+        return kept.some(function (m) { return m.id === id && m.source !== 'preset'; });
+      });
+      var out = catalogIds.slice();
+      userIds.forEach(function (id) { if (out.indexOf(id) === -1) out.push(id); });
+      p.models = out;
+    });
+
+    function remap(id) { return RETIRED_PRESET_MODELS[id] || id; }
+    st.modelId = remap(st.modelId);
+    if (!byId(st.models, st.modelId)) st.modelId = 'model-deepseek-flash';
+    Object.keys(st.chats || {}).forEach(function (cid) {
+      var chat = st.chats[cid];
+      if (chat && chat.modelId) {
+        chat.modelId = remap(chat.modelId);
+        if (!byId(st.models, chat.modelId)) chat.modelId = st.modelId;
+      }
+    });
+    return st;
+  }
+
   function baseState() {
     return {
       theme: 'pink',
@@ -159,7 +225,7 @@
       }),
       backupAt: defaultBackup(),
       model: { model: DATA.models[0].name },
-      modelId: 'model-deepseek-chat',
+      modelId: 'model-deepseek-flash',
       providers: clone(DATA.providers),
       models: clone(DATA.modelRegistry),
       promptPresets: clone(DATA.promptPresets),
@@ -236,7 +302,7 @@
       base.modelId = saved.modelId;
     } else if (saved.model && saved.model.model) {
       /* 旧存档迁移：把 A 阶段的三个假模型名对到真实一点的模型上 */
-      var legacyModelMap = { 'DeepSeek': 'model-deepseek-chat', '白露 · 慢': 'model-bailu-slow', '云雀 · 轻': 'model-bailu-lite' };
+      var legacyModelMap = { 'DeepSeek': 'model-deepseek-flash', '白露 · 慢': 'model-bailu-slow', '云雀 · 轻': 'model-bailu-lite' };
       if (legacyModelMap[saved.model.model]) base.modelId = legacyModelMap[saved.model.model];
     }
 
@@ -244,6 +310,7 @@
     var hasDefault = base.userPersonas.some(function (p) { return p.is_default; });
     if (!hasDefault && base.userPersonas.length) base.userPersonas[0].is_default = true;
 
+    mergePresetCatalog(base);
     return base;
   }
 
@@ -5200,7 +5267,7 @@
   }
   function reasoningNoteFor(mode, modelId, suffix) {
     if (mode === 'none') return '这个模型不能调思考深度，请求里不会带任何思考参数';
-    if (mode === 'deepseek') return 'DeepSeek 官方只有关闭 / 开启两档，不假装有低中高';
+    if (mode === 'deepseek') return 'DeepSeek 官方是 thinking.type + reasoning_effort：关闭 / 低 / 高 / 最高（官方 medium 与 xhigh 都归到高）';
     if (mode === 'anthropic_budget') return 'thinking.budget_tokens，会保证 max_tokens 大于 budget';
     if (mode === 'gemini_budget') return 'generationConfig.thinkingConfig.thinkingBudget';
     if (mode === 'openai_effort') return 'reasoning_effort / reasoning.effort';
