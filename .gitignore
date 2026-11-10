@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+.done
+.exit
+dist/*.prev.html
+dist/index.before*
+dist/index.round*
+dist/index.turn*
+dist/index.prev.html
