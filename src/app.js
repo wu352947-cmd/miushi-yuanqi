@@ -32,6 +32,52 @@
   function fmtNum(n) {
     return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   }
+  function fmtTokens(n) {
+    n = Number(n) || 0;
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+  }
+
+  /* ---------- 上下文占用 ----------
+     已用 token 取「上一轮的 prompt_tokens」——上游给的真实值，比本地估算准。
+     预算和后端 history_budget() 保持一致：min(32K, 窗口×60%)。 */
+  function contextBudget() {
+    var m = currentModel();
+    var win = (m && m.context) || 0;
+    var budget = 32000;
+    if (win > 0) {
+      var usable = Math.max(1024, win - 1200);
+      budget = Math.min(budget, Math.floor(usable * 0.6));
+    }
+    return Math.max(1024, budget);
+  }
+  function contextUsed(chat) {
+    if (!chat || !chat.messages) return 0;
+    for (var i = chat.messages.length - 1; i >= 0; i--) {
+      var u = chat.messages[i] && chat.messages[i].usage;
+      if (u && u.prompt_tokens) return Number(u.prompt_tokens) || 0;
+    }
+    return 0;
+  }
+  function renderContextBar() {
+    var bar = document.getElementById('ctxBar');
+    if (!bar) return;
+    var chat = state.chats[state.currentCharacterId];
+    var used = contextUsed(chat);
+    var budget = contextBudget();
+    var ratio = budget > 0 ? Math.min(1, used / budget) : 0;
+    bar.hidden = false;
+    var fill = document.getElementById('ctxFill');
+    if (fill) fill.style.width = (ratio * 100).toFixed(1) + '%';
+    var txt = document.getElementById('ctxText');
+    if (txt) {
+      txt.textContent = '上下文 ' + fmtTokens(used) + ' / ' + fmtTokens(budget) +
+        ' · ' + Math.round(ratio * 100) + '%';
+    }
+    bar.classList.toggle('is-warn', ratio >= 0.75 && ratio < 1);
+    bar.classList.toggle('is-full', ratio >= 1);
+  }
 
   /* 按 OpenAI 兼容 usage 结构渲染统计：prompt_tokens / completion_tokens / total_tokens */
   function renderUsage(usage, ms) {
@@ -563,7 +609,7 @@
     if (currentView === 'providers') renderProviders();
     if (currentView === 'presets') renderPresets();
     if (currentView === 'stats') renderStats();
-    if (currentView === 'chat') { renderChat(); updateChatHeader(); }
+    if (currentView === 'chat') { renderChat(); updateChatHeader(); renderContextBar(); }
     // 记忆属于「某段关系」，所以换角色/换用户设定之后要按新关系重新取，
     // 否则首页的「今日记住」可能还挂着上一段关系的内容。
     if (serverOnline) { refreshBondsQuiet(); refreshMemoriesQuiet(); }
@@ -1378,7 +1424,7 @@
     prefetchAdjacentWallpapers(view);
     if (view === 'home') startHomeClock(); else stopHomeClock();
     if (view === 'home') renderHome();
-    if (view === 'chat') { scrollChatBottom(false); scheduleProactive(); }
+    if (view === 'chat') { scrollChatBottom(false); scheduleProactive(); renderContextBar(); }
     if (view === 'memory') { renderMemories(); refreshMemoriesQuiet(); }
     if (view === 'me') renderMe();
     if (view === 'listen') renderListen();
@@ -1652,6 +1698,7 @@
     }
     scrollChatBottom(true);
     persistChat();
+    renderContextBar();
     if (done && done.remembered) toast('记好了：' + done.remembered.title);
     if (done && done.fallback) toast(done.fallback);
     window.setTimeout(function () { refreshMemoriesQuiet(); }, 900);

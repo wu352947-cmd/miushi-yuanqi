@@ -25,7 +25,9 @@ DEFAULT_SAMPLING: dict[str, Any] = {
     "temperature": 0.85,
     "top_p": 0.95,
     "max_tokens": 1200,
-    "context_messages": 16,
+    # 0 = 不限制条数，只按 token 预算挑（默认走预算制）
+    "context_messages": 0,
+    "context_budget": 32000,
     "stream": True,
     "frequency_penalty": None,
     "presence_penalty": None,
@@ -37,16 +39,60 @@ DEFAULT_SCAN_MESSAGES = 8
 
 
 def estimate_tokens(text: str) -> int:
-    """粗略估算 token：中文按约 2 字符 / token。只用于展示与估算标记。"""
+    """粗略估算 token：中文按约 1.6 字符 / token。
+
+    校准依据：温羽蓉那场提示词约 9,816 字，上游报 prompt_tokens=6,645
+    （1.48 字/token）。原先按 2.2 会低报 33%，预算制据此裁剪就会带太多历史。
+    """
     if not text:
         return 0
-    return max(1, int(math.ceil(len(text) / 2.2)))
+    return max(1, int(math.ceil(len(text) / 1.6)))
+
+
+def history_budget(model: dict[str, Any] | None, sampling: dict[str, Any]) -> int:
+    """历史能占多少 token。
+
+    两层限制，取小的：
+      · 窗口 × 60%   —— 再大的窗口也不能把历史塞满，得给系统块和输出留位置
+      · 用户设定的绝对上限 —— 防止 1M 窗口下每次请求几十万 token
+    """
+    window = int((model or {}).get("context") or 0) or 32768
+    reserve = max(1024, int(sampling.get("max_tokens") or 1200))
+    usable = max(1024, window - reserve)
+    ratio_cap = int(usable * 0.6)
+    user_cap = int(sampling.get("context_budget") or 0) or 32000
+    return max(1024, min(user_cap, ratio_cap))
+
+
+def pick_history(
+    messages: list[dict[str, Any]], budget_tokens: int, hard_limit: int = 0
+) -> list[dict[str, Any]]:
+    """从最新往前填，填到预算用完为止。返回按时间正序。
+
+    至少保留 1 条（哪怕它自己就超预算），否则会发出空对话。
+    hard_limit > 0 时同时受条数限制（预设里配了具体条数才生效）。
+    """
+    picked: list[dict[str, Any]] = []
+    total = 0
+    for msg in reversed(messages):
+        cost = estimate_tokens(str(msg.get("text") or ""))
+        if picked and total + cost > budget_tokens:
+            break
+        picked.append(msg)
+        total += cost
+        if hard_limit > 0 and len(picked) >= hard_limit:
+            break
+    picked.reverse()
+    return picked
 
 
 def _sampling(preset: dict[str, Any] | None) -> dict[str, Any]:
     out = dict(DEFAULT_SAMPLING)
     raw = (preset or {}).get("sampling") or {}
-    for key in ("temperature", "top_p", "max_tokens", "context_messages", "frequency_penalty", "presence_penalty"):
+    for key in (
+        "temperature", "top_p", "max_tokens", "context_messages",
+        "context_budget", "frequency_penalty", "presence_penalty",
+    ):
         if raw.get(key) is not None and raw.get(key) != "":
             out[key] = raw[key]
     if raw.get("stream") is False:
@@ -224,8 +270,9 @@ def assemble(context: dict[str, Any]) -> dict[str, Any]:
         )
 
     # 聊天记录 + 深度注入 + 预设后置
-    limit = int(sampling.get("context_messages") or DEFAULT_SAMPLING["context_messages"])
-    history = messages[-limit:] if limit > 0 else []
+    hard_limit = int(sampling.get("context_messages") or 0)
+    budget = history_budget(context.get("model"), sampling)
+    history = pick_history(messages, budget, hard_limit)
     total = len(history)
     insert_before: dict[int, list[dict[str, Any]]] = {}
     for f in depth_frags:

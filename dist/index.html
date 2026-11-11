@@ -4580,6 +4580,43 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
   color: var(--text-3);
 }
 
+
+/* ---------- 上下文进度条 (ctx-bar-v1) ---------- */
+.ctx-bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 18px 6px;
+}
+.ctx-bar__track {
+  flex: 1;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(var(--text-rgb), .1);
+  overflow: hidden;
+}
+.ctx-bar__fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(var(--tint-rgb), .55), rgba(var(--tint-rgb), .95));
+  transition: width .35s ease;
+}
+.ctx-bar.is-warn .ctx-bar__fill {
+  background: linear-gradient(90deg, #e6b04a, #dd9b32);
+}
+.ctx-bar.is-full .ctx-bar__fill {
+  background: linear-gradient(90deg, #d96a5c, #c94b3d);
+}
+.ctx-bar__text {
+  font-family: var(--sans);
+  font-size: 9.5px;
+  letter-spacing: .02em;
+  color: var(--text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ===== features/chat-history.css ===== */
 /* ===== 第三块：聊天记录管理（对话列表 / 最近的聊天 / 搜索 / 改名 / 人设三层 / 导入导出） ===== */
 
@@ -5027,6 +5064,10 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
           </div>
 
           <div class="composer-zone">
+            <div class="ctx-bar" id="ctxBar" hidden>
+              <div class="ctx-bar__track"><div class="ctx-bar__fill" id="ctxFill"></div></div>
+              <span class="ctx-bar__text" id="ctxText"></span>
+            </div>
             <div class="caps" role="group" aria-label="对话能力">
               <button class="cap is-on" type="button" data-cap="memory" aria-pressed="true">
                 <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.6" y="3" width="10.8" height="9.4" rx="2.2"/><path d="M5.2 6.2h5.6M5.2 8.8h3.4"/></svg>记忆
@@ -10674,6 +10715,52 @@ const DATA = {
   function fmtNum(n) {
     return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   }
+  function fmtTokens(n) {
+    n = Number(n) || 0;
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+  }
+
+  /* ---------- 上下文占用 ----------
+     已用 token 取「上一轮的 prompt_tokens」——上游给的真实值，比本地估算准。
+     预算和后端 history_budget() 保持一致：min(32K, 窗口×60%)。 */
+  function contextBudget() {
+    var m = currentModel();
+    var win = (m && m.context) || 0;
+    var budget = 32000;
+    if (win > 0) {
+      var usable = Math.max(1024, win - 1200);
+      budget = Math.min(budget, Math.floor(usable * 0.6));
+    }
+    return Math.max(1024, budget);
+  }
+  function contextUsed(chat) {
+    if (!chat || !chat.messages) return 0;
+    for (var i = chat.messages.length - 1; i >= 0; i--) {
+      var u = chat.messages[i] && chat.messages[i].usage;
+      if (u && u.prompt_tokens) return Number(u.prompt_tokens) || 0;
+    }
+    return 0;
+  }
+  function renderContextBar() {
+    var bar = document.getElementById('ctxBar');
+    if (!bar) return;
+    var chat = state.chats[state.currentCharacterId];
+    var used = contextUsed(chat);
+    var budget = contextBudget();
+    var ratio = budget > 0 ? Math.min(1, used / budget) : 0;
+    bar.hidden = false;
+    var fill = document.getElementById('ctxFill');
+    if (fill) fill.style.width = (ratio * 100).toFixed(1) + '%';
+    var txt = document.getElementById('ctxText');
+    if (txt) {
+      txt.textContent = '上下文 ' + fmtTokens(used) + ' / ' + fmtTokens(budget) +
+        ' · ' + Math.round(ratio * 100) + '%';
+    }
+    bar.classList.toggle('is-warn', ratio >= 0.75 && ratio < 1);
+    bar.classList.toggle('is-full', ratio >= 1);
+  }
 
   /* 按 OpenAI 兼容 usage 结构渲染统计：prompt_tokens / completion_tokens / total_tokens */
   function renderUsage(usage, ms) {
@@ -11205,7 +11292,7 @@ const DATA = {
     if (currentView === 'providers') renderProviders();
     if (currentView === 'presets') renderPresets();
     if (currentView === 'stats') renderStats();
-    if (currentView === 'chat') { renderChat(); updateChatHeader(); }
+    if (currentView === 'chat') { renderChat(); updateChatHeader(); renderContextBar(); }
     // 记忆属于「某段关系」，所以换角色/换用户设定之后要按新关系重新取，
     // 否则首页的「今日记住」可能还挂着上一段关系的内容。
     if (serverOnline) { refreshBondsQuiet(); refreshMemoriesQuiet(); }
@@ -12020,7 +12107,7 @@ const DATA = {
     prefetchAdjacentWallpapers(view);
     if (view === 'home') startHomeClock(); else stopHomeClock();
     if (view === 'home') renderHome();
-    if (view === 'chat') { scrollChatBottom(false); scheduleProactive(); }
+    if (view === 'chat') { scrollChatBottom(false); scheduleProactive(); renderContextBar(); }
     if (view === 'memory') { renderMemories(); refreshMemoriesQuiet(); }
     if (view === 'me') renderMe();
     if (view === 'listen') renderListen();
@@ -12294,6 +12381,7 @@ const DATA = {
     }
     scrollChatBottom(true);
     persistChat();
+    renderContextBar();
     if (done && done.remembered) toast('记好了：' + done.remembered.title);
     if (done && done.fallback) toast(done.fallback);
     window.setTimeout(function () { refreshMemoriesQuiet(); }, 900);

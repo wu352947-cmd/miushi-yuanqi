@@ -2625,3 +2625,40 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
   letter-spacing: .03em;
   color: var(--text-3);
 }
+
+
+/* ---------- 上下文进度条 (ctx-bar-v1) ---------- */
+.ctx-bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 18px 6px;
+}
+.ctx-bar__track {
+  flex: 1;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(var(--text-rgb), .1);
+  overflow: hidden;
+}
+.ctx-bar__fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(var(--tint-rgb), .55), rgba(var(--tint-rgb), .95));
+  transition: width .35s ease;
+}
+.ctx-bar.is-warn .ctx-bar__fill {
+  background: linear-gradient(90deg, #e6b04a, #dd9b32);
+}
+.ctx-bar.is-full .ctx-bar__fill {
+  background: linear-gradient(90deg, #d96a5c, #c94b3d);
+}
+.ctx-bar__text {
+  font-family: var(--sans);
+  font-size: 9.5px;
+  letter-spacing: .02em;
+  color: var(--text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
