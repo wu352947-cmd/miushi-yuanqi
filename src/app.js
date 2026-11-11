@@ -2605,18 +2605,6 @@
     };
   };
 
-  SHEETS.charConflict = function () {
-    var card = pendingCharImport && pendingCharImport.card;
-    if (!card) return null;
-    return {
-      title: '已经有同名角色',
-      body: '<p class="sheet-note" style="text-align:left;font-size:11.5px">已经有一位叫「' + esc(card.name) + '」的角色。要替换她，还是另外保存一份？</p>' +
-        '<p class="sheet-note">替换会覆盖她的字段和头像；另存会变成「' + esc(card.name) + '（2）」。</p>',
-      foot: '<button class="btn" type="button" data-char-conflict="keep">另存一份</button>' +
-        '<button class="btn btn--primary" type="button" data-char-conflict="replace">替换</button>'
-    };
-  };
-
   SHEETS.bookConflict = function () {
     var book = pendingBookImport && pendingBookImport.book;
     if (!book) return null;
@@ -2681,14 +2669,6 @@
       r.readAsText(file);
     });
   }
-  function readFileBuffer(file) {
-    return new Promise(function (resolve, reject) {
-      var r = new FileReader();
-      r.onload = function () { resolve(r.result); };
-      r.onerror = function () { reject(r.error); };
-      r.readAsArrayBuffer(file);
-    });
-  }
   function readFileDataUrl(file) {
     return new Promise(function (resolve, reject) {
       var r = new FileReader();
@@ -2713,91 +2693,10 @@
       return true;
     } catch (e) { return false; }
   }
-  function utf8Decode(bytes) {
-    try { return new TextDecoder('utf-8').decode(bytes); } catch (e) { return ''; }
-  }
-  function decodeBase64Utf8(b64) {
-    try {
-      var bin = atob(String(b64).replace(/\s+/g, ''));
-      var arr = new Uint8Array(bin.length);
-      for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-      return new TextDecoder('utf-8').decode(arr);
-    } catch (e) { return ''; }
-  }
   function fileBaseName(name) { return String(name || '').replace(/\.[^.]+$/, ''); }
 
   /* PNG：读 tEXt 里的 ccv3 / chara，先 ccv3 再 chara */
-  function parsePngText(buffer) {
-    var bytes = new Uint8Array(buffer);
-    var sig = [137, 80, 78, 71, 13, 10, 26, 10];
-    if (bytes.length < 20) return { ccv3: '', chara: '' };
-    for (var s = 0; s < 8; s++) if (bytes[s] !== sig[s]) return { ccv3: '', chara: '' };
-    var view = new DataView(buffer);
-    var out = { ccv3: '', chara: '' };
-    var off = 8;
-    while (off + 12 <= bytes.length) {
-      var len = view.getUint32(off);
-      var type = String.fromCharCode(bytes[off + 4], bytes[off + 5], bytes[off + 6], bytes[off + 7]);
-      var dataStart = off + 8;
-      var dataEnd = dataStart + len;
-      if (dataEnd > bytes.length) break;
-      if (type === 'tEXt') {
-        var zero = dataStart;
-        while (zero < dataEnd && bytes[zero] !== 0) zero++;
-        var keyword = utf8Decode(bytes.subarray(dataStart, zero)).toLowerCase();
-        if (keyword === 'ccv3' || keyword === 'chara') {
-          out[keyword] = utf8Decode(bytes.subarray(zero + 1, dataEnd));
-        }
-      }
-      if (type === 'IEND') break;
-      off = dataEnd + 4;
-    }
-    return out;
-  }
-
   /* JSON 角色卡：v2 / v3（spec + data）、v1 扁平（name）、Pygmalion（char_name 等） */
-  function normalizeCharacterCard(raw) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { error: 'not-card' };
-    var data = raw;
-    if (raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data)) data = raw.data;
-    var cardish = ['name', 'description', 'personality', 'scenario', 'first_mes', 'char_name', 'char_persona', 'spec', 'data'];
-    var looksLikeCard = cardish.some(function (k) { return (k in raw) || (data && (k in data)); });
-    if (!looksLikeCard) return { error: 'not-card' };
-    var name = pickStr(data.name, raw.name, data.char_name, raw.char_name);
-    if (!name) return { error: 'no-name' };
-
-    var knownTop = ['spec', 'spec_version', 'data', 'name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creatorcomment', 'creator_notes', 'tags', 'char_name', 'char_persona', 'char_greeting', 'example_dialogue', 'world_scenario', 'avatar'];
-    var knownData = ['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions', 'alternate_greetings', 'character_book', 'tags', 'creator', 'character_version', 'extensions'];
-    var extras = { top: {}, data: {} };
-    Object.keys(raw).forEach(function (k) {
-      if (k !== 'data' && knownTop.indexOf(k) === -1) extras.top[k] = raw[k];
-    });
-    if (data !== raw) {
-      Object.keys(data).forEach(function (k) {
-        if (knownData.indexOf(k) === -1) extras.data[k] = data[k];
-      });
-    }
-    if (data.extensions) extras.extensions = data.extensions;
-
-    var description = pickStr(data.description, data.char_persona, raw.char_persona, raw.description);
-    var personality = pickStr(data.personality, raw.personality);
-    var scenario = pickStr(data.scenario, data.world_scenario, raw.scenario, raw.world_scenario);
-    var firstMes = pickStr(data.first_mes, data.char_greeting, raw.first_mes, raw.char_greeting);
-    var mesExample = pickStr(data.mes_example, data.example_dialogue, raw.mes_example, raw.example_dialogue);
-    var book = (data.character_book && typeof data.character_book === 'object') ? data.character_book : null;
-    return {
-      name: name,
-      desc: firstSentence(description),
-      description: description,
-      personality: personality,
-      scenario: scenario,
-      first_mes: firstMes,
-      mes_example: mesExample,
-      character_book: book,
-      extras: extras
-    };
-  }
-
   /* 酒馆世界书条目 + 角色卡自带 character_book 条目，统一成内部条目 */
   function convertBookEntries(src) {
     var arr = [];
@@ -2825,15 +2724,6 @@
     return out;
   }
 
-  function uniqueCharName(base) {
-    var name = base;
-    var n = 1;
-    while (state.characters.some(function (c) { return c.name === name; })) {
-      n += 1;
-      name = base + '（' + n + '）';
-    }
-    return name;
-  }
   function uniqueBookName(base) {
     var name = base;
     var n = 1;
@@ -2843,126 +2733,21 @@
     }
     return name;
   }
-  function characterFromCard(card) {
-    return {
-      id: newId('char'),
-      name: card.name,
-      desc: card.desc || firstSentence(card.description),
-      description: card.description || '',
-      personality: card.personality || '',
-      scenario: card.scenario || '',
-      first_mes: card.first_mes || '',
-      mes_example: card.mes_example || '',
-      avatar: card.avatar || '',
-      worldBookId: '',
-      defaultPersonaId: '',
-      source: 'import',
-      extras: card.extras || {}
-    };
-  }
-  function materializeCardBook(card) {
-    if (!card.character_book) return '';
-    var entries = convertBookEntries(card.character_book.entries);
-    if (!entries.length) return '';
-    var baseName = pickStr(card.character_book.name, card.character_book.title) || (card.name + ' · 世界书');
-    var book = { id: newId('wb'), name: uniqueBookName(baseName), entries: entries };
-    state.worldBooks.push(book);
-    return book.id;
-  }
-
+  /* 角色卡导入：一律交给后端解析（server/cards.py 是唯一实现）。
+     file:// 或服务端离线时不再支持导入——前端那份 PNG / JSON 解析已经删掉，
+     免得两套卡格式逻辑各自漂移。 */
   function handleCharFile(file) {
     if (!file) return;
     if (file.size > 8 * 1024 * 1024) { toast('文件打不开，换一份再试试。'); return; }
-    if (SERVER_MODE && serverOnline) {
-      serverUpload('/characters/import', file, 'auto').then(function (data) {
-        toast((data && data.note) || '角色卡已导入。');
-        return refreshFromServer();
-      }).catch(apiToast);
+    if (!SERVER_MODE || !serverOnline) {
+      toast('导入角色卡要连上服务端：用 http 地址打开，并确认后端在跑。');
       return;
     }
-    var isPng = /\.png$/i.test(file.name || '') || file.type === 'image/png';
-    if (isPng) {
-      readFileBuffer(file).then(function (buf) {
-        var texts = parsePngText(buf);
-        var b64 = texts.ccv3 || texts.chara;
-        if (!b64) { toast('这张图里没有角色卡信息，也许只是一张普通图片。'); return; }
-        var raw = tryParseJson(decodeBase64Utf8(b64));
-        if (!raw) { toast('这张图里没有角色卡信息，也许只是一张普通图片。'); return; }
-        var card = normalizeCharacterCard(raw);
-        if (card.error === 'no-name') { toast('读到了文件，但缺少角色名字。'); return; }
-        if (card.error) { toast('这张图里没有角色卡信息，也许只是一张普通图片。'); return; }
-        readFileDataUrl(file).then(function (dataUrl) {
-          card.avatar = dataUrl;
-          receiveCharacterCard(card);
-        }).catch(function () { toast('文件打不开，换一份再试试。'); });
-      }).catch(function () { toast('文件打不开，换一份再试试。'); });
-      return;
-    }
-    readFileText(file).then(function (text) {
-      var raw = tryParseJson(text);
-      if (!raw) { toast('这不是一份能读的角色卡文件。'); return; }
-      var card = normalizeCharacterCard(raw);
-      if (card.error === 'no-name') { toast('读到了文件，但缺少角色名字。'); return; }
-      if (card.error) { toast('这不是一份能读的角色卡文件。'); return; }
-      card.avatar = '';
-      receiveCharacterCard(card);
-    }).catch(function () { toast('文件打不开，换一份再试试。'); });
+    serverUpload('/characters/import', file, 'auto').then(function (data) {
+      toast((data && data.note) || '角色卡已导入。');
+      return refreshFromServer();
+    }).catch(apiToast);
   }
-  function receiveCharacterCard(card) {
-    var existing = null;
-    state.characters.forEach(function (c) { if (c.name === card.name) existing = c; });
-    if (existing) {
-      pendingCharImport = { card: card, existingId: existing.id };
-      openSheet('charConflict');
-      return;
-    }
-    var bookId = materializeCardBook(card);
-    var c = characterFromCard(card);
-    c.worldBookId = bookId || '';
-    state.characters.push(c);
-    save();
-    libCharId = c.id;
-    renderLibraries();
-    renderMe();
-    paintAllAvatars();
-    renderChatContext();
-    toast(bookId ? '已导入「' + c.name + '」，已带入一本世界书。' : '已导入「' + c.name + '」。');
-  }
-  function applyCharConflict(mode) {
-    if (!pendingCharImport) return;
-    var card = pendingCharImport.card;
-    var existingId = pendingCharImport.existingId;
-    pendingCharImport = null;
-    var bookId = materializeCardBook(card);
-    if (mode === 'replace' && existingId) {
-      var target = findChar(existingId);
-      if (target) {
-        target.name = card.name;
-        target.desc = card.desc;
-        target.description = card.description;
-        target.personality = card.personality;
-        target.scenario = card.scenario;
-        target.first_mes = card.first_mes;
-        target.mes_example = card.mes_example;
-        if (card.avatar) target.avatar = card.avatar;
-        if (bookId) target.worldBookId = bookId;
-        target.extras = card.extras || {};
-        target.source = 'import';
-        libCharId = target.id;
-        save(); closeSheet(); renderLibraries(); renderMe(); paintAllAvatars(); renderChatContext();
-        toast('已替换「' + target.name + '」。');
-        return;
-      }
-    }
-    var c = characterFromCard(card);
-    c.name = uniqueCharName(card.name + '（2）');
-    c.worldBookId = bookId || '';
-    state.characters.push(c);
-    libCharId = c.id;
-    save(); closeSheet(); renderLibraries(); renderMe(); paintAllAvatars(); renderChatContext();
-    toast(bookId ? '已另存为「' + c.name + '」，并带入一本世界书。' : '已另存为「' + c.name + '」。');
-  }
-
   /* 世界书 JSON（酒馆格式有 entries；角色卡拆出的 character_book 也认） */
   function handleBookFile(file) {
     if (!file) return;
@@ -3831,7 +3616,6 @@
     }
     if ((hit = target.closest('[data-book-save]'))) { saveBook(hit.getAttribute('data-book-save')); return; }
     if ((hit = target.closest('[data-char-save]'))) { saveCharEdit(hit.getAttribute('data-char-save')); return; }
-    if ((hit = target.closest('[data-char-conflict]'))) { applyCharConflict(hit.getAttribute('data-char-conflict')); return; }
     if ((hit = target.closest('[data-book-conflict]'))) { applyBookConflict(hit.getAttribute('data-book-conflict')); return; }
     if ((hit = target.closest('[data-confirm-run]'))) {
       var cref = hit.getAttribute('data-confirm-run');
