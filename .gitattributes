@@ -1,0 +1,8 @@
+# dist/index.html 是构建产物（样式 / 脚本 / 18 张壁纸内联成的单文件）。
+# 保留入库是为了 clone 后不装 Node 也能直接跑；但它每次改动都是整文件级变化
+# （模块拼接位置一变，整个内联脚本区就整体位移），文本 diff 上万行，
+# 会把 git log / git show / PR 页面全冲掉。
+#
+# -diff：让 git 把它当二进制，diff 只显示字节数变化
+# linguist-generated：让 GitHub 折叠它，且不计入语言统计
+dist/index.html linguist-generated=true -diff
