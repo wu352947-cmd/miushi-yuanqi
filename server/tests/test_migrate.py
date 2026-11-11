@@ -63,3 +63,55 @@ def test_migration_with_keys_when_user_confirms(client):
     export = client.get("/api/providers/export", params={"includeApiKey": 1}).json()
     provider = next(p for p in export["providers"] if p["id"] == "prov-local-1")
     assert provider["apiKey"] == "sk-migrate-secret-1234"
+
+
+def test_schema_v3_migration_adds_edited_column(tmp_path, monkeypatch):
+    """v2 旧库升级到 v3：messages 新增 edited 列，数据不丢，重复执行幂等。"""
+    import sqlite3
+
+    from server import db
+
+    db_file = tmp_path / "old-v2.db"
+    con = sqlite3.connect(db_file)
+    con.executescript(
+        """
+        CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+        INSERT INTO schema_migrations VALUES (2, '2026-01-01T00:00:00');
+        CREATE TABLE messages (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, role TEXT NOT NULL,
+          text TEXT NOT NULL DEFAULT '', thinking_json TEXT, usage_json TEXT,
+          ms INTEGER NOT NULL DEFAULT 0, fallback TEXT NOT NULL DEFAULT '', aside TEXT NOT NULL DEFAULT '',
+          tool_json TEXT, error_kind TEXT NOT NULL DEFAULT '', time TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL
+        );
+        CREATE TABLE chats (
+          id TEXT PRIMARY KEY, character_id TEXT NOT NULL, persona_id TEXT NOT NULL DEFAULT '',
+          world_book_id TEXT NOT NULL DEFAULT '', preset_id TEXT NOT NULL DEFAULT '',
+          model_id TEXT NOT NULL DEFAULT '', reasoning_level TEXT NOT NULL DEFAULT '',
+          title TEXT NOT NULL DEFAULT '', pinned INTEGER NOT NULL DEFAULT 0,
+          settings_json TEXT NOT NULL DEFAULT '{}', last_at TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        INSERT INTO chats VALUES ('chat-old','miao','','','','','','旧对话',0,'{}','',
+          '2026-01-01T00:00:00','2026-01-01T00:00:00');
+        INSERT INTO messages (chat_id, role, text, created_at) VALUES ('chat-old','ai','旧消息','2026-01-01T00:00:00');
+        """
+    )
+    con.commit()
+    con.close()
+
+    monkeypatch.setenv("MSYQ_DB_PATH", str(db_file))
+    monkeypatch.setenv("MSYQ_SEED", "0")
+    db.init_db()
+    db.init_db()  # 幂等：再升级一次不报错、不重复加列
+
+    with db.get_db() as conn:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
+        version = conn.execute("SELECT MAX(version) AS v FROM schema_migrations").fetchone()["v"]
+        row = conn.execute("SELECT * FROM messages WHERE chat_id = 'chat-old'").fetchone()
+        chat = conn.execute("SELECT * FROM chats WHERE id = 'chat-old'").fetchone()
+    assert "edited" in columns
+    assert version == 3
+    assert row["text"] == "旧消息"
+    assert row["edited"] == 0
+    assert chat["title"] == "旧对话"

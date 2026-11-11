@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - 兜底
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 # --------------------------------------------------------------------------- 路径
@@ -277,6 +277,7 @@ SCHEMA: list[str] = [
       tool_json TEXT,
       error_kind TEXT NOT NULL DEFAULT '',
       time TEXT NOT NULL DEFAULT '',
+      edited INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     )
     """,
@@ -341,21 +342,25 @@ def _columns(conn, table: str) -> set[str]:
 
 
 def _migrate(conn, current: int) -> None:
-    """版本 2：多对话（去掉角色唯一索引）+ usage 新增思考 / 缓存写入列 + 对话置顶 / 附加设置。"""
-    if current >= 2:
-        return
-    usage_cols = _columns(conn, "usage")
-    if "cache_write_tokens" not in usage_cols:
-        conn.execute("ALTER TABLE usage ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0")
-    if "reasoning_tokens" not in usage_cols:
-        conn.execute("ALTER TABLE usage ADD COLUMN reasoning_tokens INTEGER NOT NULL DEFAULT 0")
-    chat_cols = _columns(conn, "chats")
-    if "pinned" not in chat_cols:
-        conn.execute("ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
-    if "settings_json" not in chat_cols:
-        conn.execute("ALTER TABLE chats ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}'")
-    conn.execute("DROP INDEX IF EXISTS idx_chats_character_unique")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_chats_character_lookup ON chats(character_id)")
+    """v2：多对话（去掉角色唯一索引）+ usage 新增思考 / 缓存写入列 + 对话置顶 / 附加设置。
+    v3：多对话管理（messages.edited 标记「编辑过」）。"""
+    if current < 2:
+        usage_cols = _columns(conn, "usage")
+        if "cache_write_tokens" not in usage_cols:
+            conn.execute("ALTER TABLE usage ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0")
+        if "reasoning_tokens" not in usage_cols:
+            conn.execute("ALTER TABLE usage ADD COLUMN reasoning_tokens INTEGER NOT NULL DEFAULT 0")
+        chat_cols = _columns(conn, "chats")
+        if "pinned" not in chat_cols:
+            conn.execute("ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+        if "settings_json" not in chat_cols:
+            conn.execute("ALTER TABLE chats ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}'")
+        conn.execute("DROP INDEX IF EXISTS idx_chats_character_unique")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chats_character_lookup ON chats(character_id)")
+    if current < 3:
+        message_cols = _columns(conn, "messages")
+        if "edited" not in message_cols:
+            conn.execute("ALTER TABLE messages ADD COLUMN edited INTEGER NOT NULL DEFAULT 0")
 
 
 def init_db() -> None:
@@ -579,6 +584,8 @@ def message_json(row: sqlite3.Row) -> dict[str, Any]:
         out["tool"] = tool
     if row["error_kind"]:
         out["errorKind"] = row["error_kind"]
+    if "edited" in row.keys() and row["edited"]:
+        out["edited"] = True
     return out
 
 
@@ -595,6 +602,8 @@ def chat_json(conn, row: sqlite3.Row, include_messages: bool = True) -> dict[str
         "pinned": bool(row["pinned"]) if "pinned" in row.keys() else False,
         "settings": jloads(row["settings_json"], {}) if "settings_json" in row.keys() else {},
         "lastAt": row["last_at"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
         "messages": [],
     }
     if include_messages:
@@ -621,8 +630,10 @@ def get_state(conn) -> dict[str, Any]:
     books = [book_json(conn, r) for r in conn.execute("SELECT * FROM world_books ORDER BY created_at ASC, id ASC").fetchall()]
     presets = [preset_json(r) for r in conn.execute("SELECT * FROM prompt_presets ORDER BY created_at ASC, id ASC").fetchall()]
     chats: dict[str, Any] = {}
-    for row in conn.execute("SELECT * FROM chats ORDER BY created_at ASC").fetchall():
-        chats[row["character_id"]] = chat_json(conn, row, include_messages=True)
+    for character in characters:
+        row = get_chat_row(conn, character["id"])
+        if row:
+            chats[character["id"]] = chat_json(conn, row, include_messages=True)
     memories = [
         memory_json(r)
         for r in conn.execute("SELECT * FROM memories ORDER BY updated_at DESC, created_at DESC").fetchall()
@@ -755,6 +766,180 @@ def ensure_chat(conn, character_id: str) -> sqlite3.Row:
     return get_chat_row(conn, character_id)  # type: ignore[return-value]
 
 
+def default_chat_title(conn, character_id: str) -> str:
+    """默认标题：角色名 - YYYY-MM-DD HH:mm（不调用模型）。"""
+    character = get_character(conn, character_id)
+    name = (character or {}).get("name") or "新对话"
+    return name + " - " + time.strftime("%Y-%m-%d %H:%M")
+
+
+def chat_summary(conn, row: sqlite3.Row) -> dict[str, Any]:
+    """对话列表行：标题 + 最后一句预览 + 时间 + 条数 + 绑定。"""
+    out = chat_json(conn, row, include_messages=False)
+    last = conn.execute(
+        "SELECT role, text, time, created_at FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1",
+        (row["id"],),
+    ).fetchone()
+    count = conn.execute("SELECT COUNT(*) AS n FROM messages WHERE chat_id = ?", (row["id"],)).fetchone()["n"]
+    out["messageCount"] = count
+    preview = ""
+    if last:
+        preview = (("我：" if last["role"] == "me" else "") + str(last["text"] or "")).replace("\n", " ")
+    out["preview"] = preview[:80]
+    if not out.get("lastAt") and last:
+        out["lastAt"] = last["created_at"]
+    return out
+
+
+def list_chat_summaries(conn, character_id: str | None = None, q: str = "") -> list[dict[str, Any]]:
+    rows = list_chat_rows(conn, character_id)
+    out = [chat_summary(conn, row) for row in rows]
+    needle = str(q or "").strip().lower()
+    if needle:
+        out = [
+            item
+            for item in out
+            if needle in str(item.get("title") or "").lower() or needle in str(item.get("preview") or "").lower()
+        ]
+    return out
+
+
+def search_chat_messages(conn, q: str, character_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    """搜索消息内容（可跳到对应位置）；标题命中的对话也返回一条（messageId=None）。"""
+    needle = str(q or "").strip()
+    if not needle:
+        return []
+    like = "%" + needle + "%"
+    results: list[dict[str, Any]] = []
+    sql = (
+        "SELECT m.*, c.title AS chat_title, c.character_id AS character_id FROM messages m "
+        "JOIN chats c ON c.id = m.chat_id WHERE m.text LIKE ?"
+    )
+    params: list[Any] = [like]
+    if character_id:
+        sql += " AND c.character_id = ?"
+        params.append(character_id)
+    sql += " ORDER BY m.id DESC LIMIT ?"
+    params.append(int(limit))
+    for row in conn.execute(sql, params).fetchall():
+        results.append(
+            {
+                "chatId": row["chat_id"],
+                "characterId": row["character_id"],
+                "chatTitle": row["chat_title"],
+                "messageId": row["id"],
+                "role": row["role"],
+                "text": str(row["text"] or "")[:160],
+                "time": row["time"],
+                "createdAt": row["created_at"],
+            }
+        )
+    title_sql = "SELECT * FROM chats WHERE title LIKE ?"
+    title_params: list[Any] = [like]
+    if character_id:
+        title_sql += " AND character_id = ?"
+        title_params.append(character_id)
+    title_sql += " ORDER BY last_at DESC LIMIT ?"
+    title_params.append(int(limit))
+    for row in conn.execute(title_sql, title_params).fetchall():
+        results.append(
+            {
+                "chatId": row["id"],
+                "characterId": row["character_id"],
+                "chatTitle": row["title"],
+                "messageId": None,
+                "role": "",
+                "text": "",
+                "time": "",
+                "createdAt": row["created_at"],
+            }
+        )
+    return results[: int(limit)]
+
+
+def chat_full_by_id(conn, chat_id: str) -> dict[str, Any] | None:
+    row = get_chat_row_by_id(conn, chat_id)
+    return chat_json(conn, row, include_messages=True) if row else None
+
+
+def delete_chat_by_id(conn, chat_id: str) -> bool:
+    row = get_chat_row_by_id(conn, chat_id)
+    if not row:
+        return False
+    conn.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+    conn.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+    return True
+
+
+def branch_chat(conn, chat_id: str, message_id: int) -> dict[str, Any] | None:
+    """从某一条消息另开分支：新对话复制到这一条（含）为止，绑定全部复制。"""
+    row = get_chat_row_by_id(conn, chat_id)
+    if not row:
+        return None
+    target = conn.execute("SELECT * FROM messages WHERE id = ? AND chat_id = ?", (int(message_id), chat_id)).fetchone()
+    if not target:
+        return None
+    title = (row["title"] or default_chat_title(conn, row["character_id"])) + " · 分支"
+    new_row = create_chat(
+        conn,
+        row["character_id"],
+        title=title,
+        persona_id=row["persona_id"],
+        world_book_id=row["world_book_id"],
+        preset_id=row["preset_id"],
+        model_id=row["model_id"],
+        reasoning_level=row["reasoning_level"],
+        settings=jloads(row["settings_json"], {}),
+    )
+    source = conn.execute(
+        "SELECT * FROM messages WHERE chat_id = ? AND id <= ? ORDER BY id ASC",
+        (chat_id, int(message_id)),
+    ).fetchall()
+    last_at = ""
+    for msg in source:
+        conn.execute(
+            "INSERT INTO messages (chat_id, role, text, thinking_json, usage_json, ms, fallback, aside, tool_json, error_kind, time, edited, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                new_row["id"],
+                msg["role"],
+                msg["text"],
+                msg["thinking_json"],
+                msg["usage_json"],
+                msg["ms"],
+                msg["fallback"],
+                msg["aside"],
+                msg["tool_json"],
+                msg["error_kind"],
+                msg["time"],
+                msg["edited"] if "edited" in msg.keys() else 0,
+                msg["created_at"],
+            ),
+        )
+        last_at = msg["created_at"]
+    if last_at:
+        conn.execute("UPDATE chats SET last_at = ?, updated_at = ? WHERE id = ?", (last_at, now_iso(), new_row["id"]))
+    return chat_full_by_id(conn, new_row["id"])
+
+
+def update_message_text(conn, chat_id: str, message_id: int, text: str) -> dict[str, Any] | None:
+    row = conn.execute("SELECT * FROM messages WHERE id = ? AND chat_id = ?", (int(message_id), chat_id)).fetchone()
+    if not row:
+        return None
+    conn.execute("UPDATE messages SET text = ?, edited = 1 WHERE id = ?", (text or "", int(message_id)))
+    conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (now_iso(), chat_id))
+    return message_json(conn.execute("SELECT * FROM messages WHERE id = ?", (int(message_id),)).fetchone())
+
+
+def delete_message_row(conn, chat_id: str, message_id: int) -> bool:
+    row = conn.execute("SELECT id FROM messages WHERE id = ? AND chat_id = ?", (int(message_id), chat_id)).fetchone()
+    if not row:
+        return False
+    conn.execute("DELETE FROM messages WHERE id = ?", (int(message_id),))
+    conn.execute("UPDATE chats SET updated_at = ? WHERE id = ?", (now_iso(), chat_id))
+    return True
+
+
 def append_message(conn, chat_id: str, role: str, text: str, **fields: Any) -> dict[str, Any]:
     now = now_iso()
     time_label = fields.pop("time", "") or time.strftime("%H:%M")
@@ -872,7 +1057,9 @@ def sync_state(conn, state: dict[str, Any]) -> None:
     for character_id, chat in chats.items():
         if not chat:
             continue
-        row = get_chat_row(conn, character_id)
+        row = get_chat_row_by_id(conn, str(chat.get("id") or "")) if chat.get("id") else None
+        if row is None:
+            row = get_chat_row(conn, character_id)
         if not row:
             conn.execute(
                 "INSERT INTO chats (id, character_id, persona_id, world_book_id, preset_id, model_id, reasoning_level, title, last_at, created_at, updated_at) "

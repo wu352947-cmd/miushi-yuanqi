@@ -499,7 +499,8 @@ const DATA = {
   settings: {
     notify: true,
     splashAlways: true,
-    startDate: "2024-11-08"
+    startDate: "2024-11-08",
+    chatFont: "md"
   }
 };
 

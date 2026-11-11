@@ -117,8 +117,11 @@ async def security_and_log(request: Request, call_next):
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     response.headers.setdefault(
         "Content-Security-Policy",
+        # 正式版（http/https）允许手机直连网易云图片服务器；交付样稿用 --inline-covers 的 data URI
         "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'",
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob: https://p1.music.126.net https://p2.music.126.net "
+        "https://p3.music.126.net https://p4.music.126.net; connect-src 'self'",
     )
     if request.url.path.startswith("/api/"):
         # 只记方法与路径，不记查询串（Gemini 的 Key 在 query 里）与请求头

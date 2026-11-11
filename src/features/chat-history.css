@@ -1,0 +1,109 @@
+/* ===== 第三块：聊天记录管理（对话列表 / 最近的聊天 / 搜索 / 改名 / 人设三层 / 导入导出） ===== */
+
+.d2-chat-toolbar { margin-bottom: 8px; }
+.d2-chat-list { display: flex; flex-direction: column; gap: 7px; margin: 6px 0 10px; }
+
+.d2-chat-row {
+  display: flex; align-items: stretch; gap: 6px;
+  border-radius: 18px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-regular);
+  box-shadow: var(--glass-shadow-thin);
+  overflow: hidden;
+}
+.d2-chat-row.is-active { border-color: rgba(var(--accent-deep-rgb), .42); background: linear-gradient(180deg, rgba(255, 255, 255, .26), rgba(var(--accent-soft-rgb), .16)); }
+.d2-chat-row.is-selected { border-color: rgba(var(--accent-deep-rgb), .6); }
+.d2-chat-row__main { flex: 1; min-width: 0; padding: 10px 4px 10px 12px; text-align: left; background: none; border: 0; display: flex; flex-direction: column; gap: 3px; }
+.d2-chat-row__top { display: flex; align-items: baseline; gap: 8px; }
+.d2-chat-row__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; color: var(--text); font-family: var(--serif, inherit); }
+.d2-chat-row__time { flex: none; font-size: 9.5px; color: var(--text-3); letter-spacing: .02em; }
+.d2-chat-row__preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--text-3); }
+.d2-chat-row__meta { display: flex; gap: 5px; flex-wrap: wrap; }
+.d2-chat-row__more { flex: none; width: 34px; border: 0; background: none; color: var(--text-3); font-size: 17px; line-height: 1; }
+.d2-pin { color: var(--accent-deep); margin-right: 4px; font-size: 10px; }
+
+.d2-check {
+  flex: none; width: 34px; border: 0; background: none; display: flex; align-items: center; justify-content: center;
+}
+.d2-check span { width: 17px; height: 17px; border-radius: 50%; border: 1.4px solid rgba(var(--accent-deep-rgb), .4); background: rgba(255, 255, 255, .3); }
+.d2-check.is-on span { background: rgba(var(--accent-deep-rgb), .82); border-color: transparent; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .5); }
+
+.d2-recent-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.d2-recent-head .field { flex: 1; }
+.d2-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 10px; }
+.d2-chip { padding: 5px 11px; border-radius: 999px; border: 1px solid var(--glass-border); background: var(--glass-thin); color: var(--text-3); font-size: 10.5px; }
+.d2-chip.is-on { color: var(--accent-deep); border-color: rgba(var(--accent-deep-rgb), .45); background: rgba(var(--accent-rgb), .2); }
+
+.d2-search-hit {
+  display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left;
+  padding: 10px 12px; margin-bottom: 7px; border-radius: 18px;
+  border: 1px solid var(--glass-border); background: var(--glass-thin); box-shadow: var(--glass-shadow-thin);
+}
+.d2-search-hit .d2-chat-row__preview { color: var(--text); }
+
+.d2-select-bar {
+  display: none; align-items: center; gap: 7px; justify-content: flex-end;
+  padding: 8px 12px; margin: 0 0 6px;
+  border-radius: 16px; border: 1px solid var(--glass-border);
+  background: var(--glass-thick); backdrop-filter: blur(6px) saturate(1.05); -webkit-backdrop-filter: blur(6px) saturate(1.05);
+}
+.d2-select-bar.is-show { display: flex; }
+.d2-select-bar__count { margin-right: auto; font-size: 10.5px; color: var(--text-3); }
+.d2-select-bar .btn { height: 32px; padding: 0 12px; font-size: 10.5px; }
+
+/* 人设三层 */
+.d2-layers { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
+.d2-layer-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; border-radius: 16px;
+  border: 1px solid var(--glass-border); background: var(--glass-thin);
+}
+.d2-layer-row__label { flex: none; width: 52px; font-size: 10px; color: var(--text-3); letter-spacing: .04em; }
+.d2-layer-row__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.d2-layer-row__name { font-size: 12px; color: var(--text); }
+.d2-layer-row__sub { font-size: 9.5px; color: var(--text-3); }
+.d2-layer-note { margin: 0 0 10px; font-size: 10px; color: var(--text-3); }
+
+.d2-settings-card { margin-top: 12px; }
+.d2-settings-card .card-head { margin-bottom: 2px; }
+
+.d2-rename-ai { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0 4px; }
+.d2-rename-ai__hint { font-size: 9.5px; color: var(--text-3); }
+
+.d2-msg-preview {
+  margin: 0 0 10px; padding: 10px 12px; border-radius: 14px;
+  border: 1px solid var(--glass-border); background: rgba(255, 255, 255, .2);
+  font-size: 11px; color: var(--text-2); line-height: 1.6;
+}
+.d2-impersonate-text {
+  margin: 8px 0; padding: 12px 14px; border-radius: 16px;
+  border: 1px solid var(--glass-border); background: var(--glass-thin);
+  font-family: var(--serif, inherit); font-size: 13px; line-height: 1.7; color: var(--text);
+}
+.d2-checkpoints { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.d2-checkpoint-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 9px 11px; border-radius: 15px; border: 1px solid var(--glass-border); background: var(--glass-thin);
+}
+.d2-checkpoint-row__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.d2-checkpoint-row .mini-btn { flex: none; }
+
+/* 单条消息操作 / 多选 */
+.d2-edited { margin-left: 5px; font-size: 8.5px; letter-spacing: .05em; color: var(--text-3); opacity: .8; }
+.msg { position: relative; }
+.d2-msg-check {
+  position: absolute; left: -2px; top: 26px; z-index: 3;
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 1.4px solid rgba(var(--accent-deep-rgb), .45);
+  background: rgba(255, 255, 255, .55);
+}
+.msg.is-msg-selected .d2-msg-check { background: rgba(var(--accent-deep-rgb), .85); border-color: transparent; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .5); }
+.msg.is-msg-selected .bubble { outline: 1px solid rgba(var(--accent-deep-rgb), .38); }
+.chat-list.is-selecting .msg { cursor: pointer; }
+
+.msg.is-flash .bubble { animation: d2MsgFlash 1.6s ease; }
+@keyframes d2MsgFlash {
+  0% { box-shadow: 0 0 0 0 rgba(var(--accent-deep-rgb), .5); }
+  40% { box-shadow: 0 0 0 5px rgba(var(--accent-deep-rgb), .18); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--accent-deep-rgb), 0); }
+}

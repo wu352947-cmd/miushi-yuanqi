@@ -1,0 +1,97 @@
+/* ===== 第一块：提供商保存自动连通 / 测试连接 / 网址补全（第 D2 轮） ===== */
+
+/* 保存按钮下方一行小字（底部操作条内换行显示） */
+.a2-actionbar { flex-wrap: wrap; }
+.a2-actionbar .d2-provider-save-note {
+  flex: 0 0 100%;
+  margin: -2px 0 0;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: .04em;
+  color: var(--text-3);
+}
+
+/* Base URL 输入框下的「已自动改为 …」提示 */
+.d2-url-hint { display: none; margin: 6px 0 0; gap: 3px; flex-direction: column; }
+.d2-url-hint.is-show { display: flex; }
+.d2-url-hint span {
+  display: block;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-3);
+  word-break: break-all;
+}
+.d2-url-hint span::before { content: "✧ "; opacity: .6; }
+
+/* 测试连接弹层：费用提示 */
+.d2-cost-warn {
+  margin: 12px 0 10px;
+  padding: 11px 13px;
+  border-radius: 16px;
+  border: 1px solid rgba(214, 138, 152, .35);
+  background: linear-gradient(180deg, rgba(255, 236, 240, .55), rgba(255, 246, 248, .3));
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.d2-cost-warn b { color: var(--accent-deep, #a4566a); font-weight: 600; }
+.d2-cost-sub { margin-top: 3px; font-size: 10px; color: var(--text-3); }
+[data-theme="ice"] .d2-cost-warn {
+  border-color: rgba(122, 164, 190, .4);
+  background: linear-gradient(180deg, rgba(226, 242, 250, .55), rgba(240, 249, 253, .3));
+}
+[data-theme="ice"] .d2-cost-warn b { color: #4f7f9b; }
+
+/* 上次测试时间 */
+.d2-test-cached {
+  margin: 0 0 10px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  letter-spacing: .02em;
+}
+
+/* 测试结果里的模型回话 */
+.d2-test-echo {
+  margin: 8px 0 0;
+  padding: 9px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .28);
+  border: 1px solid var(--glass-border);
+  font-size: 11px;
+  color: var(--text-2, var(--text));
+}
+
+/* 思考档位逐项结果 */
+.d2-test-levels { margin-top: 12px; }
+.d2-test-level {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 2px; border-bottom: 1px dashed rgba(255, 255, 255, .34);
+  font-size: 11px; color: var(--text);
+}
+.d2-test-level:last-child { border-bottom: 0; }
+.d2-test-level span:last-child { font-size: 10px; color: var(--text-3); }
+.d2-test-level.is-ok span:first-child::before { content: "✧ "; color: var(--accent-deep, #a4566a); }
+.d2-test-level.is-fail span:first-child::before { content: "· "; opacity: .5; }
+
+/* 保存后结果弹层 */
+.d2-connect-changes { margin: 4px 0 10px; padding-left: 16px; }
+.d2-connect-changes li { font-size: 10.5px; line-height: 1.7; color: var(--text-3); word-break: break-all; }
+.d2-model-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.d2-model-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  max-width: 100%;
+  padding: 5px 10px 5px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-regular);
+  font-size: 10.5px;
+  color: var(--text);
+}
+.d2-model-chip .p-icon { width: 15px; height: 15px; flex: none; }
+.d2-model-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d2-connect-balance { margin: 4px 0; font-size: 12px; color: var(--text); }
+.d2-connect-probe { margin: 8px 0 0; font-size: 10px; color: var(--text-3); word-break: break-all; }
+
+/* 高级设置里的转发方式说明 */
+#d2ForwardHint { word-break: break-word; }
