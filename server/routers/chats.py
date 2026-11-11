@@ -533,7 +533,7 @@ async def auto_title(chat_id: str, conn=Depends(get_conn)) -> dict:
         "system_text": "",
     }
     try:
-        result = await providers.complete(provider, model, prompt, api_key, None)
+        result = await providers.complete(provider, model, prompt, api_key, None, session_id=chat_id)
     except Exception as exc:  # noqa: BLE001
         info = classify_api_error(None, exc, detail=str(exc)[:200])
         return {"ok": False, "title": row["title"], "message": str(info.get("message") or "这次没能起名，可以自己改。")}
@@ -560,7 +560,14 @@ async def impersonate(character_id: str, payload: ImpersonateIn, conn=Depends(ge
     )
     _check_ready(ctx)
     try:
-        result = await providers.complete(ctx["provider"], ctx["model"], ctx["prompt"], ctx["api_key"], ctx["reasoning_level"])
+        result = await providers.complete(
+            ctx["provider"],
+            ctx["model"],
+            ctx["prompt"],
+            ctx["api_key"],
+            ctx["reasoning_level"],
+            session_id=str((ctx.get("chat") or {}).get("id") or "") or None,
+        )
     except Exception as exc:  # noqa: BLE001
         info = classify_api_error(None, exc, detail=str(exc)[:200])
         raise ApiError(info.get("kind") or "internal", str(info.get("message") or "这次没写出来，可以自己写一条。") + "，或者自己写一条。")
@@ -690,7 +697,9 @@ async def send_message(character_id: str, payload: ChatSendIn, conn=Depends(get_
             },
         )
         try:
-            async for event in providers.chat_stream(provider, model, prompt, api_key, level):
+            async for event in providers.chat_stream(
+                provider, model, prompt, api_key, level, session_id=chat_id
+            ):
                 etype = event.get("type")
                 if etype == "start":
                     first_token_ms = int(event.get("duration_ms") or 0)

@@ -332,7 +332,9 @@ async def extract_memories(character_id: str, manual: bool = False) -> dict[str,
         "meta": {},
     }
     try:
-        result = await providers.complete(provider, model, prompt, api_key, reasoning_level="off")
+        result = await providers.complete(
+            provider, model, prompt, api_key, reasoning_level="off", session_id=chat_id
+        )
     except Exception as exc:  # noqa: BLE001
         error = classify_api_error(None, exc, detail=str(exc))
         return {"ok": False, "message": error["message"], "created": []}
