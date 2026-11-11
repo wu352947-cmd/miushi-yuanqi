@@ -126,11 +126,12 @@ fi
 c_say "5/6 同步"
 CHANGED=/tmp/msyq-deploy-changes.txt
 : > "$CHANGED"
-OPTS="-a --delete --itemize-changes"
+OPTS="-a --delete --checksum --itemize-changes"
 [ "$DRY" -eq 1 ] && OPTS="$OPTS -n"
 for d in server src dist assets; do
   [ -d "$SRC/$d" ] || continue
-  rsync $OPTS --exclude='__pycache__/' "$SRC/$d/" "$DST/$d/" >> "$CHANGED" 2>&1
+  # tests/ 只在开发端跑，生产 venv 没装 pytest，同步过去纯属噪音
+  rsync $OPTS --exclude='__pycache__/' --exclude='tests/' "$SRC/$d/" "$DST/$d/" >> "$CHANGED" 2>&1
 done
 find "$DST/server" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null
 chown -R miushi:miushi "$DST/server" "$DST/src" "$DST/dist" "$DST/assets" 2>/dev/null
