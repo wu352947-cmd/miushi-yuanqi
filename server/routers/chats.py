@@ -91,9 +91,11 @@ def _load_context(
             "model": model,
             "messages": messages,
             "user_text": user_text,
-            "now_text": memory.now_card(
-                conn, character.get("id") or "", (persona or {}).get("id") or ""
-            ).get("body") or "",
+            # 此刻卡不进提示词：它的内容（现在在哪、在做什么）上下文里本来就有，
+            # 而且它是每 N 轮才更新的快照，比历史更旧，一起注入会把模型往回拽
+            # （实测：此刻卡说「离开图书馆」，生成却在「图书馆三楼还书」）。
+            # 它只留给记忆页和首页展示。
+            "now_text": "",
             "memories": memory.pinned_for_prompt(
                 conn,
                 character_id=character.get("id") or "",
