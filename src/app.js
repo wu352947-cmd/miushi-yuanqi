@@ -720,6 +720,19 @@
     });
     return (hit && hit.startedAt) || state.settings.startDate;
   }
+  /* 这条记忆属不属于「当前查看的那段关系」。
+     渲染层再判一次，这样即使请求失败、state.memories 里还是别人的数据，
+     也不会出现「标签是阿杞、内容是缪诗」的情况。 */
+  function memoryVisible(m) {
+    var sc = memoryScope();
+    var scope = m.scope || 'pair';
+    if (sc.scope === 'world') return scope === 'world';
+    if (scope === 'world') return true;
+    if (!sc.characterId) return true;
+    if (scope === 'character') return m.characterId === sc.characterId;
+    if (!m.characterId || !m.personaId) return false;   // 未归属的不显示
+    return m.characterId === sc.characterId && m.personaId === sc.personaId;
+  }
   function bondQuery() {
     var b = memoryScope();
     if (b.scope === 'world') return '&scope=world';
@@ -1769,7 +1782,7 @@
     var list = $('#memoryList');
     if (!list) return;
     var q = memoryQuery;
-    var items = state.memories.filter(function (m) { return !m.forgotten; });
+    var items = state.memories.filter(function (m) { return !m.forgotten && memoryVisible(m); });
     if (memoryFilter !== '全部') {
       items = items.filter(function (m) { return m.cat === memoryFilter; });
     }
@@ -1783,7 +1796,7 @@
     list.innerHTML = items.length
       ? items.map(renderMemRow).join('')
       : '<p class="empty-note">这里还空着。换个关键词试试。</p>';
-    var forgotten = state.memories.filter(function (m) { return m.forgotten; }).length;
+    var forgotten = state.memories.filter(function (m) { return m.forgotten && memoryVisible(m); }).length;
     $('#forgottenCount').textContent = forgotten;
     var nowText = $('#nowText');
     if (nowText) nowText.textContent = state.nowText;
@@ -3243,7 +3256,11 @@
       if (data.now && typeof data.now.body === 'string') state.nowText = data.now.body;
       renderMemories();
       return true;
-    }).catch(function () { return false; });
+    }).catch(function (err) {
+      renderMemories();
+      toast('记忆没取回来：' + (err && err.message ? err.message : '连接断了') + '，再点一次试试。');
+      return false;
+    });
   }
 
   function createMemoryFromForm() {
@@ -3639,6 +3656,9 @@
         ? (isHere ? null : { characterId: bchar, personaId: bpersona, scope: '' })
         : { characterId: '', personaId: '', scope: 'world' };
       renderBondChips();
+      /* 先按新范围重画一次：即使请求失败，也不会停留在上一段关系的列表上 */
+      state.nowText = '';
+      renderMemories();
       refreshMemoriesQuiet();
       return;
     }
