@@ -12089,7 +12089,7 @@ const DATA = {
     if (!String(finalMsg.text || '').trim()) {
       // 模型一个字都没吐出来：别留个空气泡让人猜
       if (holder) holder.remove();
-      appendErrorBubble('她这次没说出话来。可以再发一次，或者换个模型试试。');
+      appendErrorBubble('模型返回了空内容。可以重试，或换一个模型。');
       toast('这次是空回复。');
       return;
     }
@@ -12100,8 +12100,8 @@ const DATA = {
       // 被字数上限打断：明确告诉她被打断了，并给一键续写
       $('#chatList').insertAdjacentHTML(
         'beforeend',
-        '<p class="fallback-note truncate-note">她被字数上限打断了，这句话还没说完。' +
-          '<button class="mini-btn" type="button" data-truncate-continue="1">让她说完</button></p>'
+        '<p class="fallback-note truncate-note">回复被截断：已达到单次字数上限。' +
+          '<button class="mini-btn" type="button" data-truncate-continue="1">继续生成</button></p>'
       );
     }
     scrollChatBottom(true);
