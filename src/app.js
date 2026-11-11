@@ -2,6 +2,9 @@
 (function () {
   'use strict';
 
+  /* ===== 第 D2 轮功能模块：构建时由 scripts/build.mjs 注入 src/modules/*.js ===== */
+  /*@MODULES@*/
+
   /* ---------------- 常量 & 状态 ---------------- */
   var STORE_KEY = 'msyq.v2';
   var OLD_STORE_KEY = 'msyq.v1';
@@ -211,6 +214,7 @@
         notify: DATA.settings.notify,
         splashAlways: DATA.settings.splashAlways,
         startDate: DATA.settings.startDate,
+        chatFont: DATA.settings.chatFont || 'md',
         globalBookId: '',
         defaultPresetId: 'preset-default'
       },
@@ -265,6 +269,9 @@
       if (typeof saved.settings.notify === 'boolean') base.settings.notify = saved.settings.notify;
       if (typeof saved.settings.splashAlways === 'boolean') base.settings.splashAlways = saved.settings.splashAlways;
       if (parseDay(saved.settings.startDate)) base.settings.startDate = saved.settings.startDate;
+      if (saved.settings.chatFont === 'sm' || saved.settings.chatFont === 'md' || saved.settings.chatFont === 'lg') {
+        base.settings.chatFont = saved.settings.chatFont;
+      }
       if (typeof saved.settings.globalBookId === 'string') base.settings.globalBookId = saved.settings.globalBookId;
     }
     if (typeof saved.nowText === 'string' && saved.nowText) base.nowText = saved.nowText;
@@ -465,6 +472,7 @@
     Object.keys(state.chats || {}).forEach(function (cid) {
       var chat = state.chats[cid] || {};
       chats[cid] = {
+        id: chat.id || '',
         personaId: chat.personaId || '',
         worldBookId: chat.worldBookId || '',
         presetId: chat.presetId || '',
@@ -834,6 +842,7 @@
   function persistChat() {
     var chat = state.chats[state.currentCharacterId];
     if (!chat) return;
+    if (typeof d2EnsureMessageIds === 'function') d2EnsureMessageIds(chatMessages);
     chat.messages = chatMessages;
     chat.lastAt = new Date().toISOString();
     save();
@@ -999,6 +1008,7 @@
         '<p class="entity-hero__desc">' + esc(c.desc || '') + '</p>' +
         '<div class="entity-hero__actions">' +
           '<button class="mini-btn" type="button" data-char-edit="' + esc(c.id) + '">编辑</button>' +
+          '<button class="mini-btn" type="button" data-d2char-chats="' + esc(c.id) + '">对话列表</button>' +
           '<button class="mini-btn" type="button" data-char-export="' + esc(c.id) + '">导出 JSON</button>' +
           '<button class="mini-btn" type="button" data-char-export-png="' + esc(c.id) + '">导出 PNG</button>' +
           '<button class="mini-btn mini-btn--danger" type="button" data-char-del="' + esc(c.id) + '">删除</button>' +
@@ -1253,6 +1263,26 @@
     activateViewWallpaper(currentView || 'home');
   }
 
+  var CHAT_FONT_LABEL = { sm: '小', md: '标准', lg: '大' };
+
+  function normalizeChatFont(size) {
+    return (size === 'sm' || size === 'md' || size === 'lg') ? size : 'md';
+  }
+
+  function applyChatFont(size, opts) {
+    var v = normalizeChatFont(size);
+    if (!state.settings) state.settings = {};
+    state.settings.chatFont = v;
+    document.documentElement.setAttribute('data-chat-font', v);
+    document.querySelectorAll('[data-chat-font-set]').forEach(function (el) {
+      var on = el.getAttribute('data-chat-font-set') === v;
+      el.classList.toggle('is-on', on);
+      el.setAttribute('aria-pressed', String(on));
+    });
+    if (!opts || opts.save !== false) save();
+    if (opts && opts.toast) toast('聊天字号已换成「' + CHAT_FONT_LABEL[v] + '」。');
+  }
+
   function applyTheme(theme, opts) {
     state.theme = theme;
     document.documentElement.setAttribute('data-theme', theme);
@@ -1359,12 +1389,14 @@
   }
 
   function renderMessage(m) {
+    var msgIdAttr = m.id !== undefined && m.id !== null && m.id !== '' ? ' data-msg-id="' + esc(String(m.id)) + '"' : '';
+    var editedTag = m.edited ? '<span class="d2-edited" aria-label="已编辑">已编辑</span>' : '';
     if (m.role === 'ai') {
       var annotation = m.aside ? '<div class="bubble__annotation">' + esc(m.aside) + '</div>' : '';
-      return '<div class="msg msg--ai">' +
+      return '<div class="msg msg--ai"' + msgIdAttr + '>' +
         avatarHTML(currentChar(), 'avatar avatar--ai msg__avatar') +
         '<div class="msg__body">' +
-          '<p class="msg__name"><span>' + esc(charName()) + '</span><span class="msg__time">' + esc(m.time) + '</span></p>' +
+          '<p class="msg__name"><span>' + esc(charName()) + '</span><span class="msg__time">' + esc(m.time) + editedTag + '</span></p>' +
           (m.thinking ? thinkFoldHTML(m.thinking) : '') +
           (m.tool ? renderTool(m.tool) : '') +
           '<div class="bubble bubble--ai">' + paragraphs(m.text) + annotation + '</div>' +
@@ -1373,9 +1405,9 @@
         '</div>' +
       '</div>';
     }
-    return '<div class="msg msg--me">' +
+    return '<div class="msg msg--me"' + msgIdAttr + '>' +
       '<div class="msg__body">' +
-        '<p class="msg__name"><span class="msg__time">' + esc(m.time) + '</span></p>' +
+        '<p class="msg__name"><span class="msg__time">' + esc(m.time) + editedTag + '</span></p>' +
         '<div class="bubble bubble--me">' + paragraphs(m.text) + '</div>' +
       '</div>' +
     '</div>';
@@ -1383,7 +1415,9 @@
 
   function renderChat() {
     var list = $('#chatList');
+    if (typeof d2EnsureMessageIds === 'function') d2EnsureMessageIds(chatMessages);
     list.innerHTML = chatMessages.map(renderMessage).join('');
+    if (typeof d2DecorateChat === 'function') d2DecorateChat();
     scrollChatBottom(false);
   }
 
@@ -1561,6 +1595,14 @@
       sessionUsage.completion += fake.usage.completion_tokens;
       sessionUsage.total += fake.usage.total_tokens;
       var msg = { role: 'ai', text: reply, time: hm(new Date()), usage: fake.usage, ms: fake.ms, fallback: '离线演示回复：没有连上后端，这条不是真实模型生成的。' };
+      var demoLevel = (typeof chatReasoningLevel === 'function') ? chatReasoningLevel() : 'off';
+      if (demoLevel && demoLevel !== 'off') {
+        msg.thinking = {
+          sec: 3,
+          demo: true,
+          text: '（演示）这不是真实模型的思维链，只是离线样稿里示意「思考档位开着的回复」会长什么样：\n先接住你刚才那句话的情绪，再留一个轻轻的话题，不要追问太紧。'
+        };
+      }
       appendChat(msg);
     }, 900);
   }
@@ -1569,13 +1611,15 @@
     return '先到「我的 → 模型与提供商」里填写 API Key，再发消息。';
   }
 
-  function sendChat() {
+  function sendChat(opts) {
+    opts = opts || {};
+    var mode = opts.mode || 'normal';
     var input = $('#chatInput');
-    var text = input ? input.value.trim() : '';
-    if (!text) { if (input) input.focus(); return; }
+    var text = opts.text !== undefined ? String(opts.text).trim() : (input ? input.value.trim() : '');
+    if (mode === 'normal' && !text) { if (input) input.focus(); return; }
     if (chatBusy) return;
-    input.value = '';
-    appendChat({ role: 'me', text: text, time: hm(new Date()) });
+    if (input) input.value = '';
+    if (mode === 'normal') appendChat({ role: 'me', text: text, time: hm(new Date()) });
 
     if (!SERVER_MODE || !serverOnline) { localFakeReply(); return; }
 
@@ -1607,7 +1651,7 @@
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text, modelId: state.modelId, reasoningLevel: chatReasoningLevel() })
+      body: JSON.stringify({ text: text, modelId: ((state.chats[char.id] && state.chats[char.id].modelId) || state.modelId), reasoningLevel: chatReasoningLevel(), chatId: (state.chats[char.id] && state.chats[char.id].id) || '', mode: mode })
     }).then(function (res) {
       if (!res.ok) {
         return res.json().catch(function () { return {}; }).then(function (data) {
@@ -1636,6 +1680,9 @@
         error: function (data) { errInfo = data; },
         done: function (data) {
           doneHandled = true;
+          if (typeof d2OnServerFallback === 'function' && data && data.fallbackRemoved && data.fallbackRemoved.length) {
+            d2OnServerFallback(data.fallbackRemoved, chatReasoningLevel());
+          }
           finishStream(data, streamText, errInfo);
         }
       });
@@ -1737,28 +1784,27 @@
      由手机直接从网易云图片服务器加载；失败时退回主题同色素面唱片。 */
   function coverUrl(song, size) {
     if (!song || !song.coverUrl) return '';
+    if (typeof d2CoverSongUrl === 'function') return d2CoverSongUrl(song, size, 0);
     var px = size || 300;
     return song.coverUrl + '?param=' + px + 'y' + px;
   }
   function setCoverImg(el, song, size) {
+    if (typeof d2CoverSetImg === 'function') { d2CoverSetImg(el, song, size); return; }
     if (!el) return;
     var url = coverUrl(song, size);
     if (!url) { el.classList.add('is-missing'); el.removeAttribute('src'); return; }
-    el.onerror = function () {
-      /* 网络抖动时先重试一次，再退回主题同色素面；不出现破图标 */
-      if (!el.dataset.retry) { el.dataset.retry = '1'; el.src = url + '&r=1'; return; }
-      el.onerror = null;
-      el.classList.add('is-missing');
-      el.removeAttribute('src');
-    };
     el.classList.remove('is-missing');
     if (el.getAttribute('src') !== url) el.src = url;
   }
   function coverThumb(song, size) {
     var url = coverUrl(song, size || 120);
     if (!url) return '<span class="song-row__cover" aria-hidden="true"></span>';
-    /* 列表封面直接加载（120px 小图），失败先重试一次，仍失败就去掉 img 露出素色小方块 */
-    return '<span class="song-row__cover" aria-hidden="true"><img src="' + url + '" alt="" decoding="async" referrerpolicy="no-referrer" onerror="if(!this.dataset.retry){this.dataset.retry=1;this.src=this.src}else{this.remove()}"></span>';
+    /* 列表封面：失败时按 p1 → p2 → p3 → p4 换域名重试，四个都失败才露出素色小方块 */
+    var base = song && song.coverUrl ? song.coverUrl + '?param=' + (size || 120) + 'y' + (size || 120) : '';
+    if (url.indexOf('data:') === 0) base = '';
+    return '<span class="song-row__cover" aria-hidden="true"><img src="' + url + '" alt="" decoding="async" referrerpolicy="no-referrer"' +
+      ' data-cover-base="' + esc(base) + '" data-cover-attempt="0"' +
+      ' onerror="window.d2CoverError&&window.d2CoverError(this)"></span>';
   }
 
   function renderListen() {
@@ -2005,6 +2051,7 @@
     }
     renderTokenBars();
     updateServerNote();
+    if (typeof d2RenderRecentChatsEntry === 'function') d2RenderRecentChatsEntry();
   }
 
   function updateServerNote() {
@@ -2047,7 +2094,14 @@
     s.setAttribute('aria-checked', String(!!state.settings.splashAlways));
     $('#startDate').value = state.settings.startDate;
     $('#settingsThemeValue').textContent = themeLabel(state.theme);
+    var font = normalizeChatFont(state.settings.chatFont);
+    document.querySelectorAll('[data-chat-font-set]').forEach(function (el) {
+      var on = el.getAttribute('data-chat-font-set') === font;
+      el.classList.toggle('is-on', on);
+      el.setAttribute('aria-pressed', String(on));
+    });
     updateServerNote();
+    if (typeof d2RenderChatSettings === 'function') d2RenderChatSettings();
   }
 
   function backupNow() {
@@ -3805,6 +3859,10 @@
       return;
     }
     if ((hit = target.closest('[data-model]'))) { selectModel(hit.getAttribute('data-model')); return; }
+    if ((hit = target.closest('[data-chat-font-set]'))) {
+      applyChatFont(hit.getAttribute('data-chat-font-set'), { toast: true });
+      return;
+    }
     if ((hit = target.closest('[data-theme-set]'))) {
       applyTheme(hit.getAttribute('data-theme-set'), { toast: true });
       if (!hit.classList.contains('theme-swatch')) openSheet('theme');
@@ -4125,6 +4183,7 @@
    * 返回 { supported, mode, level, params, note, dropSampling }
    */
   function buildReasoningParams(model, level) {
+    if (typeof d2DowngradeLevel === 'function') level = d2DowngradeLevel(model, level);
     if (!model) return { supported: false, mode: 'none', level: level || 'off', params: null, note: '还没有选模型', dropSampling: [] };
     var r = model.reasoning || { mode: 'none', levels: [] };
     var levels = reasoningLevels(model);
@@ -4274,7 +4333,8 @@
   }
   function thinkFoldHTML(t) {
     if (!t) return '';
-    return '<details class="think-fold"><summary>' + IC_BULB + '想了 ' + esc(t.sec || 3) + ' 秒</summary>' +
+    var label = (t.demo ? '演示 · ' : '') + '想了 ' + esc(t.sec || 3) + ' 秒';
+    return '<details class="think-fold' + (t.demo ? ' think-fold--demo' : '') + '"><summary>' + IC_BULB + label + '</summary>' +
       '<div class="think-fold__body">' + esc(t.text || '') + '</div></details>';
   }
 
@@ -4447,7 +4507,8 @@
       bar.innerHTML =
         '<button class="btn btn--soft" type="button" data-action="test-conn">测试连接</button>' +
         '<button class="btn btn--danger" type="button" data-action="delete-provider">删除</button>' +
-        '<button class="btn btn--primary" type="button" data-action="save-provider">保存</button>';
+        '<button class="btn btn--primary" type="button" data-action="save-provider">保存</button>' +
+        '<p class="d2-provider-save-note">保存后自动连接，不扣费</p>';
     }
     var box = document.getElementById('providerScroll');
     if (!box) return;
@@ -4467,6 +4528,7 @@
         '<button class="a2-tab' + (providerTab === 'advanced' ? ' is-on' : '') + '" type="button" data-a2="provider-tab" data-value="advanced" role="tab">高级设置</button>' +
       '</div>' +
       '<div id="provTabBody">' + providerTabHtml(p) + '</div>';
+    if (typeof d2AfterProviderDetail === 'function') d2AfterProviderDetail(p);
   }
 
   function providerTabHtml(p) {
@@ -4481,6 +4543,7 @@
     var p = findProvider(providerDetailId);
     if (!p) return;
     body.innerHTML = providerTabHtml(p);
+    if (typeof d2AfterProviderDetail === 'function') d2AfterProviderDetail(p);
   }
 
   function a2SwitchRow(id, label, sub, on) {
@@ -4566,8 +4629,13 @@
         '<p class="a2-sub">这家不支持查询余额</p>' +
         '<p class="a2-note" style="text-align:left">只有 DeepSeek 官方与 OpenRouter 有公开的余额接口，其他类型默认关闭。</p></div>';
     }
+    var forwardMode = adv.forwardMode || 'auto';
     return '<div class="a2-card form-card">' +
-        a2InputRow('请求超时', '<input class="field" id="provTimeout" type="number" inputmode="numeric" value="' + esc(adv.timeout || 45) + '" placeholder="45">', '单位秒；测试连接固定最多等 8 秒') +
+        '<div class="form-row form-row--stack"><span class="form-row__label">中转转发方式</span>' +
+          '<select class="field" id="provForwardMode">' + (typeof d2ForwardModeOptionsHtml === 'function' ? d2ForwardModeOptionsHtml(forwardMode) : '') + '</select>' +
+          '<p class="form-row__hint" id="d2ForwardHint">' + esc(typeof d2ForwardModeHint === 'function' ? d2ForwardModeHint(forwardMode) : '档位由后端真实模型家族 + 转发方式决定，不看中转站名字') + '</p>' +
+        '</div>' +
+        a2InputRow('请求超时', '<input class="field" id="provTimeout" type="number" inputmode="numeric" value="' + esc(adv.timeout || 45) + '" placeholder="45">', '单位秒；测试连接最多等 25 秒') +
         a2SwitchRow('provSwitchThinkingAdv', '回传历史思考过程', '关闭后回复里不显示「想了 N 秒」', adv.returnThinking !== false) +
       '</div>' +
       bal +
@@ -4636,10 +4704,12 @@
     el = document.getElementById('provSwitchThinkingAdv'); if (el) p.advanced.returnThinking = el.getAttribute('aria-checked') === 'true';
     el = document.getElementById('provSwitchBalance'); if (el) p.advanced.fetchBalance = el.getAttribute('aria-checked') === 'true';
     el = document.getElementById('provTimeout'); if (el && el.value) p.advanced.timeout = Math.max(5, parseInt(el.value, 10) || 45);
+    el = document.getElementById('provForwardMode'); if (el) p.advanced.forwardMode = el.value;
   }
   function saveProvider(silent) {
     var p = findProvider(providerDetailId);
     if (!p) return;
+    if (typeof d2SaveProviderFlow === 'function') { d2SaveProviderFlow(silent); return; }
     collectProviderForm(p);
     function done() {
       save();
@@ -5013,6 +5083,7 @@
   function testConnection() {
     var p = findProvider(providerDetailId);
     if (!p) return;
+    if (typeof d2OpenTestConnection === 'function') { d2OpenTestConnection(); return; }
     collectProviderForm(p);
     openSheet('connTest');
     if (SERVER_MODE && serverOnline) {
@@ -7133,6 +7204,7 @@
   function startApplication() {
     if (appStarted) { renderAfterServerRefresh(); return; }
     appStarted = true;
+    applyChatFont(state.settings.chatFont, { save: false });
     applyTheme(state.theme);
     tickClock();
     var entered = false;

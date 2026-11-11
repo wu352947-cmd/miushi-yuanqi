@@ -178,9 +178,9 @@ def export_character(character_id: str, format: str = "json", conn=Depends(get_c
 
 @router.get("/{character_id}/chats")
 def character_chats(character_id: str, conn=Depends(get_conn)) -> dict:
+    """这位角色的全部对话（多对话）；旧字段保持兼容，额外带 preview/条数。"""
     _get_or_404(conn, character_id)
-    row = db.get_chat_row(conn, character_id)
-    return {"chats": [db.chat_json(conn, row, include_messages=False)] if row else []}
+    return {"chats": db.list_chat_summaries(conn, character_id)}
 
 
 @router.get("/{character_id}")

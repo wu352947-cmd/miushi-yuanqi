@@ -131,6 +131,9 @@ def assemble(context: dict[str, Any]) -> dict[str, Any]:
     now_text = (context.get("now_text") or "").strip()
     memories = context.get("memories") or []
     sampling = _sampling(preset)
+    author_note = context.get("author_note") or {}
+    note_text = str(author_note.get("text") or "").strip()
+    note_depth = int(author_note.get("depth") or 0)
     scan_count = int(context.get("scan_messages") or DEFAULT_SCAN_MESSAGES)
     world_budget = int(context.get("world_budget") or DEFAULT_WORLD_BUDGET)
     memory_budget = int(context.get("memory_budget") or DEFAULT_MEMORY_BUDGET)
@@ -229,7 +232,17 @@ def assemble(context: dict[str, Any]) -> dict[str, Any]:
         depth = max(1, int(f.get("depth") or 2))
         idx = max(0, total - depth)
         insert_before.setdefault(idx, []).append(f)
+    note_index = max(0, total - 1 - note_depth) if note_text else -1
     for idx, msg in enumerate(history):
+        if note_text and idx == note_index:
+            blocks.append(
+                {
+                    "kind": "author_note",
+                    "label": "作者注释 · 只对这段聊天生效",
+                    "role": "system",
+                    "text": note_text,
+                }
+            )
         for f in insert_before.get(idx, []):
             blocks.append(_preset_block(f, "深度注入 · 倒数第 " + str(int(f.get("depth") or 2)) + " 条"))
         blocks.append(

@@ -25,6 +25,49 @@ class ChatSendIn(BaseModel):
     text: str = ""
     modelId: str | None = None
     reasoningLevel: str | None = None
+    chatId: str | None = None
+    mode: str = "normal"
+
+class ChatCreateIn(BaseModel):
+    characterId: str = ""
+    title: str | None = None
+    personaId: str | None = None
+    worldBookId: str | None = None
+    presetId: str | None = None
+    modelId: str | None = None
+    reasoningLevel: str | None = None
+    settings: dict[str, Any] | None = None
+    pinned: bool | None = None
+
+class ChatDetailPatch(BaseModel):
+    title: str | None = None
+    pinned: bool | None = None
+    personaId: str | None = None
+    worldBookId: str | None = None
+    presetId: str | None = None
+    modelId: str | None = None
+    reasoningLevel: str | None = None
+    settings: dict[str, Any] | None = None
+    titleLocked: bool | None = None
+
+class MessageEditIn(BaseModel):
+    text: str = ""
+
+class ChatBranchIn(BaseModel):
+    messageId: int
+
+class ChatImportIn(BaseModel):
+    format: str = "auto"
+    content: str = ""
+    payload: dict[str, Any] | None = None
+    characterId: str = ""
+
+class ChatBulkIn(BaseModel):
+    chatIds: list[str] = Field(default_factory=list)
+
+class ImpersonateIn(BaseModel):
+    modelId: str | None = None
+    reasoningLevel: str | None = None
 
 
 class KeyIn(BaseModel):

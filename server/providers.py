@@ -21,8 +21,19 @@ import httpx
 from .errors import classify_api_error, reasoning_related_error
 from .prompts import estimate_tokens
 from .reasoning import build_reasoning_params, default_level
+from .url_normalize import base_from_models_url, join_base_path, models_candidates
 
 TEST_TIMEOUT = 8.0
+
+# 中转站转发方式（第 D2 轮第一块第 5 条）：默认 auto，可在高级设置里改
+FORWARD_MODES = (
+    "auto",
+    "openai_compat_translate",
+    "openai_compat_passthrough",
+    "native_anthropic",
+    "native_gemini",
+    "model_suffix",
+)
 
 MOCK_PULL: dict[str, list[str]] = {
     "deepseek": ["deepseek-flash", "deepseek-v4-pro"],
@@ -64,7 +75,18 @@ def redact_url(url: str) -> str:
     return re.sub(r"([?&](?:key|api_key|apiKey)=)[^&]+", r"\1••••", url or "")
 
 
+def forward_mode(provider: dict[str, Any]) -> str:
+    """中转站转发方式：默认 auto（按协议 + 模型家族自动判断）。"""
+    mode = str(((provider or {}).get("advanced") or {}).get("forwardMode") or "auto").strip()
+    return mode if mode in FORWARD_MODES else "auto"
+
+
 def protocol_of(provider: dict[str, Any]) -> str:
+    mode = forward_mode(provider)
+    if mode == "native_anthropic":
+        return "anthropic"
+    if mode == "native_gemini":
+        return "gemini"
     proto = (provider or {}).get("protocol") or "openai"
     advanced = (provider or {}).get("advanced") or {}
     if proto == "openai" and advanced.get("responseApi"):
@@ -72,17 +94,89 @@ def protocol_of(provider: dict[str, Any]) -> str:
     return proto
 
 
+def _forward_model(provider: dict[str, Any], model: dict[str, Any], level: str | None) -> dict[str, Any]:
+    """按转发方式调整模型（模型名区分档位 / 翻译成 OpenAI 参数）。"""
+    mode = forward_mode(provider)
+    item = dict(model or {})
+    reasoning = dict(item.get("reasoning") or {})
+    levels = [lv for lv in (reasoning.get("levels") or []) if lv]
+    if mode == "model_suffix":
+        suffix = str(((provider or {}).get("advanced") or {}).get("suffix") or "-thinking")
+        extra_map = dict(reasoning.get("map") or {})
+        mapping: dict[str, str] = {}
+        for lv in levels:
+            mapping[lv] = item.get("modelId") or ""
+        mapping["off"] = item.get("modelId") or ""
+        mapping["auto"] = item.get("modelId") or ""
+        for lv in levels:
+            if lv not in ("off", "auto"):
+                mapping[lv] = str(item.get("modelId") or "") + suffix
+        mapping.update(extra_map)
+        item["reasoning"] = {
+            "mode": "relay_suffix",
+            "levels": levels or ["off", "auto"],
+            "defaultLevel": reasoning.get("defaultLevel") or "off",
+            "map": mapping,
+            "note": "中转站用模型名区分档位（model_suffix）",
+        }
+        return item
+    if mode == "openai_compat_translate":
+        translated = [lv for lv in ("off", "auto", "low", "medium", "high", "xhigh", "max") if lv in levels]
+        if not translated:
+            translated = ["low", "medium", "high"]
+        item["reasoning"] = {
+            "mode": "openai_effort",
+            "levels": translated,
+            "defaultLevel": reasoning.get("defaultLevel") if reasoning.get("defaultLevel") in translated else translated[0],
+            "note": "中转站只吃 OpenAI 参数：思考档位翻译成 reasoning_effort",
+        }
+        return item
+    # auto / passthrough / native_*：按模型家族原生参数；native_* 的协议已由 protocol_of 处理
+    return item
+
+
 def models_url(provider: dict[str, Any], api_key: str = "") -> str:
     base = str((provider or {}).get("baseUrl") or "").rstrip("/")
     proto = protocol_of(provider)
     if proto == "gemini":
-        path = "/v1beta/models"
+        path = "/v1beta/models" if not base.endswith("/v1beta") else "/models"
         if api_key:
             path += "?key=" + quote(api_key, safe="")
         return base + path
     if proto == "anthropic":
-        return base + "/v1/models"
-    return base + "/models"
+        return join_base_path(base, "/v1/models")
+    return join_base_path(base, "/models")
+
+
+def models_url_candidates(provider: dict[str, Any], api_key: str = "") -> list[str]:
+    """按协议优先 + 只填域名时 /v1/models 与 /models 都试，用于自动识别接口格式。"""
+    base = str((provider or {}).get("baseUrl") or "").rstrip("/")
+    if not base:
+        return []
+    urls: list[str] = []
+
+    def push(url: str) -> None:
+        if url and url not in urls:
+            urls.append(url)
+
+    push(models_url(provider, api_key))
+    proto = protocol_of(provider)
+    for alt in ("openai", "anthropic", "gemini"):
+        if alt == proto:
+            continue
+        if alt == "gemini":
+            path = "/v1beta/models" if not base.endswith("/v1beta") else "/models"
+            if api_key:
+                path += "?key=" + quote(api_key, safe="")
+            push(base + path)
+        elif alt == "anthropic":
+            push(join_base_path(base, "/v1/models"))
+        else:
+            push(join_base_path(base, "/models"))
+    # 只填域名（没有 /vN 路径）时按需求依次免费试 {base}/v1/models 和 {base}/models
+    for url in models_candidates(base, proto):
+        push(url)
+    return urls
 
 
 def chat_url(provider: dict[str, Any], model: dict[str, Any], stream: bool, api_key: str = "") -> str:
@@ -181,8 +275,10 @@ def build_request(
     proto = protocol_of(provider)
     segments = prompt.get("segments") or []
     sampling = prompt.get("sampling") or {}
-    model_key = str(model.get("modelId") or "")
     level = reasoning_level if reasoning_level is not None else default_level(model)
+    # 中转站转发方式：model_suffix 换模型 ID / translate 翻译成 OpenAI 参数
+    model = _forward_model(provider, model, level)
+    model_key = str(model.get("modelId") or "")
     built = build_reasoning_params(model, level, proto)
     params = None if disable_reasoning else built.get("params")
     drop = set(drop_sampling if drop_sampling is not None else (built.get("dropSampling") or []))
@@ -827,6 +923,177 @@ async def pull_models(provider: dict[str, Any], api_key: str) -> dict[str, Any]:
         payload = _error_payload(None, exc, str(exc), url)
         payload["ids"] = []
         return payload
+
+
+
+MINIMAL_PROMPT: dict[str, Any] = {
+    "segments": [{"role": "user", "text": "hi"}],
+    "sampling": {"max_tokens": 8, "temperature": None, "stream": True},
+    "system_text": "",
+}
+
+
+async def probe_models(provider: dict[str, Any], api_key: str) -> dict[str, Any]:
+    """只用免费 GET 模型列表接口识别接口格式并拉模型，不发任何生成请求。
+
+    依次试：协议对应的规范地址 → 其它原生格式 → 只填域名时的 /v1/models、/models。
+    """
+    candidates = models_url_candidates(provider, api_key)
+    if not candidates:
+        return {
+            "ok": False,
+            "kind": "badrequest",
+            "message": "先填一个网址：还不知道要连哪里。",
+            "ids": [],
+            "url": "",
+            "status": 0,
+            "ms": 0,
+        }
+    if mock_enabled():
+        proto = protocol_of(provider)
+        return {
+            "ok": True,
+            "kind": proto,
+            "ids": list(MOCK_PULL.get(proto, MOCK_PULL["openai"])),
+            "url": redact_url(candidates[0]),
+            "status": 200,
+            "ms": 12,
+            "demo": True,
+        }
+    started = time.monotonic()
+    last: dict[str, Any] = {
+        "ok": False,
+        "kind": "network",
+        "message": "连不上这个地址：检查网址和网络，再试一次。",
+        "ids": [],
+        "url": redact_url(candidates[0]),
+        "status": 0,
+    }
+    for url in candidates:
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(TEST_TIMEOUT, connect=5.0)) as client:
+                resp = await client.get(url, headers=_headers(provider, api_key))
+        except Exception as exc:  # noqa: BLE001
+            info = classify_api_error(None, exc, detail=redact_url(url))
+            last = {"ok": False, **info, "ids": [], "url": redact_url(url), "status": 0, "ms": int((time.monotonic() - started) * 1000)}
+            continue
+        ms = int((time.monotonic() - started) * 1000)
+        if resp.status_code >= 400:
+            info = _error_payload(resp.status_code, None, resp.text[:500], url)
+            last = {"ok": False, **info, "ids": [], "url": redact_url(url), "status": resp.status_code, "ms": ms}
+            continue
+        try:
+            ids = parse_model_ids(resp.json())
+        except ValueError:
+            ids = parse_model_ids(resp.text)
+        if not ids:
+            last = {
+                "ok": False,
+                "kind": "badresponse",
+                "message": "这个地址没有返回模型列表：换个网址再试，或手动添加模型。",
+                "ids": [],
+                "url": redact_url(url),
+                "status": resp.status_code,
+                "ms": ms,
+            }
+            continue
+        kind = _kind_from_models_url(url, provider)
+        return {
+            "ok": True,
+            "kind": kind,
+            "ids": ids[:200],
+            "url": redact_url(url),
+            "status": resp.status_code,
+            "ms": ms,
+        }
+    return last
+
+
+def _kind_from_models_url(url: str, provider: dict[str, Any]) -> str:
+    lowered = (url or "").lower()
+    if "/v1beta/models" in lowered:
+        return "gemini"
+    if re.search(r"/v1/models", lowered):
+        return "anthropic" if protocol_of(provider) == "anthropic" else protocol_of(provider)
+    return protocol_of(provider)
+
+
+async def test_generation(
+    provider: dict[str, Any],
+    model: dict[str, Any],
+    api_key: str,
+    level: str | None = None,
+) -> dict[str, Any]:
+    """测试连接：只发一条真实的最小生成请求（单条 "hi"，max_tokens 很小）。"""
+    started = time.monotonic()
+    if mock_enabled():
+        return {
+            "ok": True,
+            "kind": "ok",
+            "message": "测试连接成功：模型能正常回复（演示模式，没有真的请求外部接口）。",
+            "streamSupported": True,
+            "responseText": "hi",
+            "ms": 12,
+            "status": 200,
+        }
+    text_parts: list[str] = []
+    stream_supported = False
+    error_payload: dict[str, Any] | None = None
+    try:
+        async with asyncio.timeout(25):
+            async for event in chat_stream(provider, model, MINIMAL_PROMPT, api_key, level):
+                etype = event.get("type")
+                if etype == "start":
+                    stream_supported = True
+                elif etype == "delta":
+                    stream_supported = True
+                    chunk = str(event.get("text") or "")
+                    if chunk:
+                        text_parts.append(chunk)
+                elif etype == "error":
+                    error_payload = event
+                    break
+    except asyncio.TimeoutError:
+        return {
+            "ok": False,
+            "kind": "timeout",
+            "message": "等太久没回音：检查网络或换一个模型，再试一次。",
+            "streamSupported": False,
+            "responseText": "",
+            "ms": int((time.monotonic() - started) * 1000),
+            "status": 0,
+        }
+    except Exception as exc:  # noqa: BLE001
+        info = classify_api_error(None, exc, detail=str(exc)[:200])
+        return {
+            "ok": False,
+            "kind": info.get("kind") or "network",
+            "message": info.get("message") or "没连上：检查网址和网络，再试一次。",
+            "streamSupported": False,
+            "responseText": "",
+            "ms": int((time.monotonic() - started) * 1000),
+            "status": 0,
+        }
+    ms = int((time.monotonic() - started) * 1000)
+    if error_payload:
+        return {
+            "ok": False,
+            "kind": error_payload.get("kind") or "network",
+            "message": error_payload.get("message") or "没连上：检查网址和 Key，再试一次。",
+            "streamSupported": False,
+            "responseText": "",
+            "ms": ms,
+            "status": 0,
+        }
+    return {
+        "ok": True,
+        "kind": "ok",
+        "message": "测试连接成功：模型能正常回复。",
+        "streamSupported": stream_supported,
+        "responseText": "".join(text_parts)[:80],
+        "ms": ms,
+        "status": 200,
+    }
 
 
 def balance_supported(provider: dict[str, Any]) -> bool:

@@ -27,25 +27,15 @@ node_modules/
 # 本地临时运行文件
 .tmp/
 
-# 截图与本地运行痕迹
+# 截图不入库
 shots/
-.pytest_cache/
-.done
-.exit
-.done.prev
-.exit.prev
 
-# 历史构建，只保留当前 dist/index.html
+# 历史 dist 备份不入库（只保留 dist/index.html）
+dist/index.*.html
 dist/*.prev.html
-dist/index.before*
-dist/index.round*
-dist/index.turn*
-dist/index.prev.html
-dist/index.phase-*
-dist/index.c*-covers-inline.html
-dist/index.d-covers-inline.html
 
-# 体量很大的过程参考图，不入库
-ref/preview/
-ref/user-bugs/
-ref/user-feedback-r6/
+# 本地运行标记
+.done
+.done.*
+.exit
+.exit.*
