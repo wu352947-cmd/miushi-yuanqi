@@ -823,6 +823,8 @@ def get_chat(conn, character_id: str, include_messages: bool = True) -> dict[str
 def ensure_chat(conn, character_id: str) -> sqlite3.Row:
     row = get_chat_row(conn, character_id)
     if row:
+        # 老数据可能只有聊天没有关系记录，顺手补齐（幂等）
+        ensure_bond(conn, row["persona_id"] or "", character_id)
         return row
     config = load_app_settings(conn)
     now = now_iso()
@@ -837,6 +839,8 @@ def ensure_chat(conn, character_id: str) -> sqlite3.Row:
         "VALUES (?, ?, ?, '', '', ?, '', '', '', ?, ?)",
         (new_id("chat"), character_id, persona_id, config.get("modelId", ""), now, now),
     )
+    # 新的一段关系从今天开始算
+    ensure_bond(conn, persona_id, character_id, now[:10])
     return get_chat_row(conn, character_id)  # type: ignore[return-value]
 
 

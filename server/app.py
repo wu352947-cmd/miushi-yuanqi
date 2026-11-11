@@ -45,6 +45,7 @@ from server.routers import (  # noqa: E402
     characters,
     chats,
     memories,
+    bonds,
     migrate,
     models,
     personas,
@@ -109,6 +110,7 @@ for module in (
     worldbooks,
     chats,
     memories,
+    bonds,
     migrate,
 ):
     app.include_router(module.router, dependencies=PROTECTED)

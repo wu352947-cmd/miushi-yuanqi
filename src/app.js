@@ -566,7 +566,7 @@
     if (currentView === 'chat') { renderChat(); updateChatHeader(); }
     // 记忆属于「某段关系」，所以换角色/换用户设定之后要按新关系重新取，
     // 否则首页的「今日记住」可能还挂着上一段关系的内容。
-    if (serverOnline) refreshMemoriesQuiet();
+    if (serverOnline) { refreshBondsQuiet(); refreshMemoriesQuiet(); }
   }
 
   function refreshUsageSummary() {
@@ -706,8 +706,23 @@
     var r = resolvedPersona(chat, char);
     return { characterId: char ? char.id : '', personaId: (r.persona && r.persona.id) || '' };
   }
-  function bondQuery() {
+  function memoryScope() {
+    if (memoryScopeOverride) return memoryScopeOverride;
     var b = currentBond();
+    return { characterId: b.characterId, personaId: b.personaId, scope: '' };
+  }
+  /* 「在一起多少天」按每段关系自己的开始日期算；没设过就退回全局设置 */
+  function bondStartDate() {
+    var b = currentBond();
+    var hit = null;
+    (state.bonds || []).forEach(function (x) {
+      if (x.characterId === b.characterId && x.personaId === b.personaId) hit = x;
+    });
+    return (hit && hit.startedAt) || state.settings.startDate;
+  }
+  function bondQuery() {
+    var b = memoryScope();
+    if (b.scope === 'world') return '&scope=world';
     var qs = '';
     if (b.characterId) {
       qs = '&characterId=' + encodeURIComponent(b.characterId) + '&personaId=' + encodeURIComponent(b.personaId);
@@ -1718,6 +1733,8 @@
   /* ---------------- 记忆 ---------------- */
   var memoryFilter = '全部';
   var memoryQuery = '';
+  /* 记忆页可以临时翻看别的某段关系，但不改变当前聊天对象 */
+  var memoryScopeOverride = null;
 
   function dotsHtml(n) {
     var html = '';
@@ -1770,6 +1787,7 @@
     $('#forgottenCount').textContent = forgotten;
     var nowText = $('#nowText');
     if (nowText) nowText.textContent = state.nowText;
+    renderBondChips();
     $$('#memoryFilters .chip-filter').forEach(function (c) {
       var on = c.getAttribute('data-cat') === memoryFilter;
       c.classList.toggle('is-on', on);
@@ -1977,9 +1995,9 @@
     var now = new Date();
     paintAllAvatars();
     var d = $('#homeDays');
-    if (d) d.textContent = daysTogether(state.settings.startDate);
+    if (d) d.textContent = daysTogether(bondStartDate());
     var since = $('#homeSince');
-    if (since) since.textContent = sinceTextDots(state.settings.startDate);
+    if (since) since.textContent = sinceTextDots(bondStartDate());
     var poem = $('#homePoem');
     if (poem) poem.textContent = DATA.themes[state.theme].quote;
     var greet = $('#homeGreeting');
@@ -2030,9 +2048,9 @@
   function renderMe() {
     paintAllAvatars();
     var daysEl = $('#daysTogether');
-    if (daysEl) daysEl.textContent = daysTogether(state.settings.startDate);
+    if (daysEl) daysEl.textContent = daysTogether(bondStartDate());
     var sinceEl = $('#togetherSince');
-    if (sinceEl) sinceEl.textContent = sinceText(state.settings.startDate);
+    if (sinceEl) sinceEl.textContent = sinceText(bondStartDate());
     var backupEl = $('#backupTime');
     if (backupEl) backupEl.textContent = state.backupAt ? '上次备份 · ' + formatBackup(state.backupAt) : '还没有备份 · 点一下试试';
     var sub = $('#themeEntrySub');
@@ -3186,6 +3204,38 @@
   }
 
   /* ---------------- 记忆操作 ---------------- */
+  function refreshBondsQuiet() {
+    if (!serverOnline) return Promise.resolve(false);
+    return serverFetch('/bonds').then(function (data) {
+      state.bonds = Array.isArray(data.bonds) ? data.bonds : [];
+      state.worldMemoryCount = data.worldCount || 0;
+      renderBondChips();
+      renderHome();
+      renderMe();
+      return true;
+    }).catch(function () { return false; });
+  }
+
+  function renderBondChips() {
+    var box = $('#bondChips');
+    if (!box) return;
+    var cur = memoryScope();
+    var html = '';
+    (state.bonds || []).forEach(function (b) {
+      var on = cur.scope !== 'world' && cur.characterId === b.characterId && cur.personaId === b.personaId;
+      html += '<button class="chip-filter' + (on ? ' is-on' : '') + '" type="button"'
+        + ' data-bond-char="' + esc(b.characterId) + '" data-bond-persona="' + esc(b.personaId) + '"'
+        + ' aria-pressed="' + (on ? 'true' : 'false') + '">'
+        + esc(b.characterName) + ' × ' + esc(b.personaName) + ' · ' + (b.memoryCount || 0) + '</button>';
+    });
+    if (state.worldMemoryCount) {
+      var won = cur.scope === 'world';
+      html += '<button class="chip-filter' + (won ? ' is-on' : '') + '" type="button"'
+        + ' data-bond-char="" data-bond-persona="" aria-pressed="' + (won ? 'true' : 'false') + '">共享 · '
+        + state.worldMemoryCount + '</button>';
+    }
+    box.innerHTML = html;
+  }
   function refreshMemoriesQuiet() {
     if (!serverOnline) return Promise.resolve(false);
     return serverFetch('/memories?includeForgotten=1' + bondQuery()).then(function (data) {
@@ -3580,6 +3630,18 @@
     if ((hit = target.closest('[data-action]'))) { handleAction(hit.getAttribute('data-action'), hit); return; }
     if ((hit = target.closest('[data-nav]'))) { navTo(hit.getAttribute('data-nav')); return; }
     if ((hit = target.closest('[data-cap]'))) { toggleCap(hit); return; }
+    if ((hit = target.closest('[data-bond-char]'))) {
+      var bchar = hit.getAttribute('data-bond-char') || '';
+      var bpersona = hit.getAttribute('data-bond-persona') || '';
+      var here = currentBond();
+      var isHere = bchar && bchar === here.characterId && bpersona === here.personaId;
+      memoryScopeOverride = bchar
+        ? (isHere ? null : { characterId: bchar, personaId: bpersona, scope: '' })
+        : { characterId: '', personaId: '', scope: 'world' };
+      renderBondChips();
+      refreshMemoriesQuiet();
+      return;
+    }
     if ((hit = target.closest('[data-cat]'))) { setFilter(hit.getAttribute('data-cat')); return; }
     if ((hit = target.closest('[data-memory]'))) { openSheet('memory', hit.getAttribute('data-memory')); return; }
 
@@ -3742,6 +3804,19 @@
       var v = e.target.value;
       if (!parseDay(v)) { e.target.value = state.settings.startDate; return; }
       state.settings.startDate = v;
+      /* 「在一起」的开始日期属于每一段关系，改了要同步过去，不然首页天数不会变 */
+      var here = currentBond();
+      (state.bonds || []).forEach(function (b) {
+        if (b.characterId === here.characterId && b.personaId === here.personaId) {
+          b.startedAt = v;
+          if (serverOnline) {
+            serverFetch('/bonds/' + encodeURIComponent(b.id), {
+              method: 'PUT',
+              body: { startedAt: v }
+            }).catch(apiToast);
+          }
+        }
+      });
       save();
       renderMe();
       renderHome();
