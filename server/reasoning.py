@@ -1,6 +1,7 @@
-"""思考档位映射 buildReasoningParams 的 Python 版（依据 2026-11-11 官方文档）。
+"""思考档位的唯一实现（依据 2026-11-11 官方文档）。
 
-与前端的 buildReasoningParams 保持同一套映射。每个模型由 reasoning 配置决定可用档位：
+前端不再自己算这套映射，只通过 GET /api/models/{id}/reasoning-preview 展示这里的结果。
+每个模型由 reasoning 配置决定可用档位：
   mode / levels / defaultLevel / note
 可选：offMode（anthropic 5.x 的关闭方式）、supportsMinimal（gemini off）、map（relay_suffix）、
       supportedEfforts / mandatory（openrouter）。

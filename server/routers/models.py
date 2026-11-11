@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends
 
-from .. import db
+from .. import db, providers, reasoning
 from ..errors import ApiError
 from .deps import get_conn
 
@@ -43,6 +44,26 @@ def create_model(payload: dict = Body(default={}), conn=Depends(get_conn)) -> di
         raise ApiError("notfound", "这家提供商已经不在列表里了。", status=404)
     db._upsert_model(conn, item, db.now_iso())
     return {"ok": True, "model": db.get_model(conn, item["id"])}
+
+
+@router.get("/{model_id}/reasoning-preview")
+def reasoning_preview(model_id: str, level: str = "", conn=Depends(get_conn)) -> dict:
+    """这个模型在指定档位下会带什么思考参数。
+
+    唯一事实来源是 server/reasoning.py；前端只做展示，不再自己算一套映射，
+    避免前后端慢慢漂移（前端那份已删除）。
+    """
+    model = _get_or_404(conn, model_id)
+    provider = db.get_provider(conn, str(model.get("providerId") or "")) or {}
+    protocol = providers.protocol_of(provider)
+    built = reasoning.build_reasoning_params(model, level or None, protocol)
+    params = built.get("params")
+    text = (
+        json.dumps(params, ensure_ascii=False, indent=2)
+        if params
+        else str(built.get("note") or "这次请求不带思考参数")
+    )
+    return {"reasoning": built, "text": text, "protocol": protocol}
 
 
 @router.get("/{model_id}")

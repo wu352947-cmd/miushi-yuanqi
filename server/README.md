@@ -68,7 +68,7 @@ server/
   db.py            SQLite 建表迁移、演示数据、序列化、整体状态同步、浏览器迁移
   schemas.py       请求 / 响应模型
   providers.py     协议适配：OpenAI 兼容 / Responses / Anthropic / Gemini / DeepSeek / OpenRouter
-  reasoning.py     buildReasoningParams（与前端同一套映射）
+  reasoning.py     思考档位映射（唯一实现，前端经接口读取展示）
   errors.py        classifyApiError：中文 kind + 短提示
   prompts.py       assemblePrompt、世界书常开 / 关键词激活与预算
   memory.py        现在卡、主题笔记、软遗忘、自动抽取、「记住这个」
@@ -151,7 +151,7 @@ server/
 流程要点：
 
 1. `assemblePrompt`：预设前置 → 角色设定 → 世界书（常开 + 关键词命中，扫最近若干条，做字符预算）→ 用户设定 → 现在卡与钉住的记忆 → 聊天记录（含深度注入）→ 预设后置 → 当前用户句。
-2. `buildReasoningParams` 按当前模型与档位把参数拼进对应协议；不支持思考的模型绝不带参数。
+2. `reasoning.build_reasoning_params` 按当前模型与档位把参数拼进对应协议；不支持思考的模型绝不带参数。前端不再重复实现，改由 `/api/models/{id}/reasoning-preview` 读取这里的同一份结果。
 3. 上游返回 400/422 且错误与 thinking / reasoning / budget / effort 有关时，去掉思考参数重试一次，回复带 `fallback` 标记，聊天不失败。
 4. OpenAI 兼容流式请求带 `stream_options.include_usage`；Anthropic / Gemini / Responses 的 usage 分别从各自事件里取。
 5. 结束后写一条 usage（提供商 + 模型 ID + 显示名，绝无「未知模型」）；拿不到 usage 时按字数估算并标 `estimated`。

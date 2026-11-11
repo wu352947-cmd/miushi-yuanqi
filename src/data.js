@@ -236,7 +236,7 @@ const DATA = {
   ],
 
   /*
-   * 模型库。reasoning.mode 决定 buildReasoningParams 怎么翻译档位：
+   * 模型库。reasoning.mode 决定思考参数怎么翻译（真值在后端 reasoning.py）：
    * none / openai_effort / anthropic_budget / gemini_budget / deepseek / openrouter / relay_suffix
    * price 为每百万 token 的价格（输入 / 缓存命中输入 / 输出），currency 为 ¥ 或 $
    */

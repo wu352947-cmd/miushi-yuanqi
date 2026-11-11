@@ -5549,7 +5549,7 @@ const DATA = {
   ],
 
   /*
-   * 模型库。reasoning.mode 决定 buildReasoningParams 怎么翻译档位：
+   * 模型库。reasoning.mode 决定思考参数怎么翻译（真值在后端 reasoning.py）：
    * none / openai_effort / anthropic_budget / gemini_budget / deepseek / openrouter / relay_suffix
    * price 为每百万 token 的价格（输入 / 缓存命中输入 / 输出），currency 为 ¥ 或 $
    */
@@ -12167,144 +12167,35 @@ const DATA = {
     return lv;
   }
   /*
-   * buildReasoningParams(model, level) —— 与 server/reasoning.py 同一套映射。
-   * 返回 { supported, mode, level, params, note, dropSampling }
+   * 思考参数只由后端算（server/reasoning.py），前端仅展示，避免两边映射漂移。
+   * 预览走 GET /api/models/{id}/reasoning-preview，结果按「模型|档位」缓存。
    */
-  function buildReasoningParams(model, level) {
-    if (typeof d2DowngradeLevel === 'function') level = d2DowngradeLevel(model, level);
-    if (!model) return { supported: false, mode: 'none', level: level || 'off', params: null, note: '还没有选模型', dropSampling: [] };
-    var r = model.reasoning || { mode: 'none', levels: [] };
-    var levels = reasoningLevels(model);
-    if (r.mode === 'none' || !levels.length) {
-      return { supported: false, mode: 'none', level: level || 'off', params: null, note: '这个模型不能调思考深度，请求里不会带任何思考参数', dropSampling: [] };
-    }
-    var provider = providerOf(model) || {};
-    var protocol = provider.protocol || 'openai';
-    if (protocol === 'openai' && provider.advanced && provider.advanced.responseApi) protocol = 'openai_responses';
-    var lv = levels.indexOf(level) === -1 ? (level === 'auto' || level === 'off' ? level : reasoningDefaultLevel(model)) : level;
-    var out = { supported: true, mode: r.mode, level: lv, params: null, note: '', dropSampling: [] };
-    var mid = String(model.modelId || '').toLowerCase();
-    if (r.mode === 'deepseek') {
-      if (lv === 'off') { out.params = { thinking: { type: 'disabled' } }; out.note = 'thinking.type = disabled（关闭思考）'; }
-      else { out.params = { thinking: { type: 'enabled' }, reasoning_effort: lv }; out.dropSampling = ['temperature', 'presence_penalty', 'frequency_penalty']; out.note = 'thinking.type = enabled，reasoning_effort = ' + lv + '；开启思考时不发 temperature / penalty'; }
-      return out;
-    }
-    if (r.mode === 'openai_effort') {
-      if (lv === 'auto') { out.params = protocol === 'openai_responses' ? { reasoning: { summary: 'auto' } } : null; out.note = '自动：不带 effort，交给模型默认值'; return out; }
-      var eff = lv === 'off' ? (mid.indexOf('gpt-5') !== -1 && mid.indexOf('gpt-6') === -1 ? 'minimal' : 'none') : lv;
-      out.params = protocol === 'openai_responses' ? { reasoning: { effort: eff, summary: 'auto' } } : { reasoning_effort: eff };
-      out.note = (protocol === 'openai_responses' ? 'reasoning.effort = ' : 'reasoning_effort = ') + eff;
-      return out;
-    }
-    if (r.mode === 'anthropic_effort') {
-      out.dropSampling = ['temperature', 'top_p', 'top_k'];
-      if (lv === 'auto') { out.note = '自动：不发 output_config，交给模型默认值'; return out; }
-      if (lv === 'off') {
-        var offMode = r.offMode || 'disabled';
-        if (offMode === 'disabled') { out.params = { thinking: { type: 'disabled' } }; out.note = 'thinking.type = disabled'; }
-        else if (offMode === 'between_tools') { out.params = { thinking: { type: 'between_tools' } }; out.note = 'thinking.type = between_tools（这家不允许 disabled）'; }
-        else { out.supported = false; out.note = '这个模型思考一直开着，不能关闭，只能调深浅'; }
-        return out;
-      }
-      var aeff = effortClamp(lv);
-      out.params = { output_config: { effort: aeff }, thinking: { type: 'adaptive', display: 'summarized' } };
-      out.note = 'output_config.effort = ' + aeff + (aeff === 'xhigh' || aeff === 'max' ? '，max_tokens 至少 64000' : '');
-      return out;
-    }
-    if (r.mode === 'anthropic_budget') {
-      if (lv === 'off' || lv === 'auto') { out.note = lv === 'off' ? '关闭：不发 thinking' : '自动：不发 budget'; return out; }
-      var budget = lv === 'low' ? 2048 : lv === 'medium' ? 8192 : 24576;
-      out.params = { thinking: { type: 'enabled', budget_tokens: budget }, max_tokens: budget + 4096 };
-      out.note = 'thinking.budget_tokens = ' + budget + '，max_tokens 至少大于 budget';
-      return out;
-    }
-    if (r.mode === 'gemini_level') {
-      out.dropSampling = ['temperature', 'top_p', 'top_k'];
-      if (lv === 'auto') { out.note = '自动：不发 thinkingLevel'; return out; }
-      if (lv === 'off') {
-        if (r.supportsMinimal) { out.params = { generationConfig: { thinkingConfig: { thinkingLevel: 'minimal', includeThoughts: true } } }; out.note = 'thinkingLevel = minimal（几乎不思考）'; }
-        else { out.supported = false; out.note = '这个 Gemini 模型不提供关闭：minimal 会报错'; }
-        return out;
-      }
-      var glv = effortClamp(lv, ['low', 'medium', 'high']);
-      out.params = { generationConfig: { thinkingConfig: { thinkingLevel: glv, includeThoughts: true } } };
-      out.note = 'thinkingLevel = ' + glv + '（只发 level）';
-      return out;
-    }
-    if (r.mode === 'gemini_budget') {
-      if (lv === 'off' && r.offUnsupported) { out.supported = false; out.note = '2.5 Pro 不能关闭思考（budget=0 会 400）'; return out; }
-      var gb = lv === 'off' ? 0 : lv === 'auto' ? -1 : lv === 'low' ? 1024 : lv === 'medium' ? 8192 : 24576;
-      if (lv === 'xhigh' || lv === 'max') gb = 24576;
-      out.params = { generationConfig: { thinkingConfig: { thinkingBudget: gb } } };
-      out.note = 'thinkingConfig.thinkingBudget = ' + gb + '（只发 budget）';
-      return out;
-    }
-    if (r.mode === 'openrouter') {
-      var efforts = (r.supportedEfforts || []).slice();
-      if (lv === 'off') {
-        if (efforts.indexOf('none') !== -1 && !r.mandatory) { out.params = { reasoning: { effort: 'none' } }; out.note = 'reasoning.effort = none'; }
-        else { out.supported = false; out.note = '这个模型默认就在思考，不能关闭'; }
-        return out;
-      }
-      if (lv === 'auto') { out.note = '自动：不发 reasoning（enabled=true 官方定义是 medium）'; return out; }
-      var oeff = effortClamp(lv, efforts.length ? efforts : ['low', 'medium', 'high', 'xhigh', 'max']);
-      out.params = { reasoning: { effort: oeff } };
-      out.note = 'reasoning.effort = ' + oeff;
-      return out;
-    }
-    if (r.mode === 'xai') {
-      if (lv === 'auto') { out.note = '自动：不发 reasoning_effort'; return out; }
-      var xeff = effortClamp(lv, levels.filter(function (x) { return x !== 'auto' && x !== 'off'; }));
-      out.params = { reasoning_effort: xeff }; out.dropSampling = ['presence_penalty', 'frequency_penalty'];
-      out.note = 'reasoning_effort = ' + xeff;
-      return out;
-    }
-    if (r.mode === 'qwen_thinking') {
-      if (lv === 'off') { out.params = { enable_thinking: false }; out.note = 'enable_thinking = false'; return out; }
-      if (lv === 'auto') { out.note = '自动：不发 enable_thinking'; return out; }
-      if (mid.indexOf('qwen3.8-max') !== -1) { var qeff = effortClamp(lv, ['low', 'medium', 'high', 'xhigh']); out.params = { enable_thinking: true, reasoning_effort: qeff }; out.note = 'enable_thinking + reasoning_effort = ' + qeff; }
-      else { var qb = lv === 'low' ? 2048 : lv === 'medium' ? 8192 : 32768; out.params = { enable_thinking: true, thinking_budget: qb }; out.note = 'enable_thinking + thinking_budget = ' + qb; }
-      return out;
-    }
-    if (r.mode === 'kimi') {
-      out.dropSampling = ['temperature', 'top_p', 'presence_penalty', 'frequency_penalty'];
-      if (mid.indexOf('k2') !== -1) { out.params = { thinking: { type: lv === 'off' ? 'disabled' : 'enabled' } }; out.note = 'K2 系用 thinking 开关（12 月底下线）'; return out; }
-      if (lv === 'auto') { out.note = '自动：不发 reasoning_effort，Kimi 默认最高'; return out; }
-      var keff = effortClamp(lv, ['low', 'high', 'max']); out.params = { reasoning_effort: keff }; out.note = 'reasoning_effort = ' + keff;
-      return out;
-    }
-    if (r.mode === 'zhipu') {
-      if (lv === 'off') { out.params = { thinking: { type: 'disabled' } }; out.note = 'thinking.type = disabled'; return out; }
-      var zeff = effortClamp(lv, ['low', 'high', 'max']); out.params = { thinking: { type: 'enabled' }, reasoning_effort: zeff }; out.note = 'thinking + reasoning_effort = ' + zeff;
-      return out;
-    }
-    if (r.mode === 'ark') {
-      if (lv === 'off') { out.params = { thinking: { type: 'disabled' } }; out.note = 'thinking.type = disabled'; return out; }
-      if (lv === 'auto') { out.note = '自动：不发 thinking / reasoning_effort'; return out; }
-      var aeff2 = (lv === 'xhigh' || lv === 'max') ? 'high' : effortClamp(lv, ['low', 'medium', 'high']); out.params = { reasoning_effort: aeff2 }; out.note = 'reasoning_effort = ' + aeff2;
-      return out;
-    }
-    if (r.mode === 'siliconflow_thinking') {
-      if (lv === 'off') { out.params = { enable_thinking: false }; out.note = 'enable_thinking = false'; return out; }
-      if (lv === 'auto') { out.note = '自动：不发 enable_thinking'; return out; }
-      if (mid.indexOf('deepseek-v4') !== -1 || mid.indexOf('glm-5.2') !== -1 || mid.indexOf('glm-5-2') !== -1) {
-        var seff = (lv === 'max' || lv === 'xhigh') ? 'max' : 'high'; out.params = { reasoning_effort: seff }; out.note = 'reasoning_effort = ' + seff;
-      } else { var sb = lv === 'low' ? 2048 : lv === 'medium' ? 8192 : 32768; out.params = { enable_thinking: true, thinking_budget: sb }; out.note = 'enable_thinking + thinking_budget = ' + sb; }
-      return out;
-    }
-    if (r.mode === 'relay_suffix') {
-      var target = (r.map && r.map[lv]) || model.modelId;
-      out.params = { model: target };
-      out.note = '这家用模型名区分档位：切到 ' + target;
-      return out;
-    }
-    out.note = '未知的思考方式，先不带参数';
-    return out;
-  }
+  var reasonPreviewCache = {};
+  var reasonPreviewBusy = {};
   function reasoningParamsPreview(model, level) {
-    var built = buildReasoningParams(model, level);
-    if (!built.params) return built.note || '这次请求不带思考参数';
-    return JSON.stringify(built.params, null, 2);
+    if (!model || !model.id) return '还没有选模型';
+    var key = String(model.id) + '|' + String(level || '');
+    if (Object.prototype.hasOwnProperty.call(reasonPreviewCache, key)) return reasonPreviewCache[key];
+    if (!SERVER_MODE || !serverOnline) return '服务端没连上，参数以服务端实际请求为准';
+    if (!reasonPreviewBusy[key]) {
+      reasonPreviewBusy[key] = true;
+      serverFetch('/models/' + encodeURIComponent(model.id) + '/reasoning-preview?level=' + encodeURIComponent(level || ''))
+        .then(function (data) {
+          reasonPreviewCache[key] = (data && data.text) ? String(data.text) : '没读到参数';
+        })
+        .catch(function (err) {
+          reasonPreviewCache[key] = '读取失败：' + ((err && err.message) || '未知错误');
+        })
+        .then(function () {
+          delete reasonPreviewBusy[key];
+          if (sheetName === 'reasoning') {
+            var keep = sheetBody.scrollTop;
+            openSheet('reasoning');
+            sheetBody.scrollTop = keep;
+          }
+        });
+    }
+    return '正在读取…';
   }
   function updateThinkCap() {
     var cap = document.getElementById('thinkCap');
