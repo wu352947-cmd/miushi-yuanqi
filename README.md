@@ -81,7 +81,7 @@ node scripts/build.mjs --inline-covers
 ```
 
 `server/tests/` 里每个用例都用临时 SQLite 库，模型调用全部 mock，
-不会碰真实数据，也不会发真实请求。业务代码（4,696 条语句）当前覆盖率 76.77%；
+不会碰真实数据，也不会发真实请求。业务代码（4,696 条语句）当前覆盖率 77.94%；
 `.coveragerc` 把测试文件本身排除在统计之外。
 
 每次 push 到 `main`，GitHub Actions 会跑同一套测试，覆盖率低于 70% 直接失败。
