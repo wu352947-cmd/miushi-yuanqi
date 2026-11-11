@@ -514,8 +514,14 @@ def _config_value(conn, key: str, default: Any = None) -> Any:
     return db.load_app_settings(conn).get("settings", {}).get(key, default)
 
 
-def schedule_extract_after_reply(character_id: str, persona_id: str = "") -> None:
-    """每聊 N 轮自动抽取一次；写入标记避免重复抽同一轮。"""
+def schedule_extract_after_reply(
+    character_id: str, persona_id: str = "", force: bool = False
+) -> None:
+    """每聊 N 轮自动抽取一次；写入标记避免重复抽同一轮。
+
+    force=True 时跳过轮数门槛（离线续写用：它不产生用户轮，
+    按轮数算永远轮不到它，那她说的新细节就进不了记忆库）。
+    """
     try:
         with db.get_db() as conn:
             if not _config_value(conn, "memoryExtractEnabled", True):
@@ -525,8 +531,9 @@ def schedule_extract_after_reply(character_id: str, persona_id: str = "") -> Non
             if not chat:
                 return
             user_turns = sum(1 for m in chat.get("messages") or [] if m.get("role") == "me")
-            if user_turns == 0 or user_turns % every != 0:
-                return
+            if not force:
+                if user_turns == 0 or user_turns % every != 0:
+                    return
             config = db.load_app_settings(conn)
             marks = config.setdefault("memoryMarks", {})
             if marks.get(chat["id"]) == user_turns:
