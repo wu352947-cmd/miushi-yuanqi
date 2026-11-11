@@ -564,6 +564,9 @@
     if (currentView === 'presets') renderPresets();
     if (currentView === 'stats') renderStats();
     if (currentView === 'chat') { renderChat(); updateChatHeader(); }
+    // 记忆属于「某段关系」，所以换角色/换用户设定之后要按新关系重新取，
+    // 否则首页的「今日记住」可能还挂着上一段关系的内容。
+    if (serverOnline) refreshMemoriesQuiet();
   }
 
   function refreshUsageSummary() {
@@ -695,6 +698,21 @@
       if (q) return { persona: q, source: 'char' };
     }
     return { persona: defaultPersona(), source: 'global' };
+  }
+  // 记忆的归属单位是「一段关系」= 当前角色 × 当前用户设定，不是单个角色。
+  function currentBond() {
+    var char = currentChar();
+    var chat = char ? chatOf(char.id) : null;
+    var r = resolvedPersona(chat, char);
+    return { characterId: char ? char.id : '', personaId: (r.persona && r.persona.id) || '' };
+  }
+  function bondQuery() {
+    var b = currentBond();
+    var qs = '';
+    if (b.characterId) {
+      qs = '&characterId=' + encodeURIComponent(b.characterId) + '&personaId=' + encodeURIComponent(b.personaId);
+    }
+    return qs;
   }
   function personaSourceLabel(source, char) {
     if (source === 'chat') return '这场指定';
@@ -3170,7 +3188,7 @@
   /* ---------------- 记忆操作 ---------------- */
   function refreshMemoriesQuiet() {
     if (!serverOnline) return Promise.resolve(false);
-    return serverFetch('/memories?includeForgotten=1').then(function (data) {
+    return serverFetch('/memories?includeForgotten=1' + bondQuery()).then(function (data) {
       if (Array.isArray(data.memories)) state.memories = data.memories;
       if (data.now && typeof data.now.body === 'string') state.nowText = data.now.body;
       renderMemories();
@@ -3185,9 +3203,19 @@
     var importance = parseInt((($('#memNewImportance') || {}).value || '6'), 10);
     if (!body) { toast('写一句要记住的话吧。'); return; }
     if (!serverOnline) { toast('离线模式下先不新增记忆，连上后端再试。'); return; }
+    var bond = currentBond();
     serverFetch('/memories', {
       method: 'POST',
-      body: { title: title || body.slice(0, 20), body: body, category: category, importance: isNaN(importance) ? 6 : importance, source: '手动新建' }
+      body: {
+        title: title || body.slice(0, 20),
+        body: body,
+        category: category,
+        importance: isNaN(importance) ? 6 : importance,
+        source: '手动新建',
+        scope: 'pair',
+        characterId: bond.characterId,
+        personaId: bond.personaId
+      }
     }).then(function (data) {
       if (data.memory) state.memories.unshift(data.memory);
       closeSheet();
@@ -3205,9 +3233,18 @@
     if (!last) { toast('还没有可以记住的回复。'); return; }
     var char = currentChar();
     var chat = char ? chatOf(char.id) : null;
+    var bond = currentBond();
     serverFetch('/memories/remember', {
       method: 'POST',
-      body: { text: last, title: last.split('。')[0].slice(0, 20), source: '聊天里点「记住」', chatId: chat ? chat.id : '' }
+      body: {
+        text: last,
+        title: last.split('。')[0].slice(0, 20),
+        source: '聊天里点「记住」',
+        chatId: chat ? chat.id : '',
+        scope: 'pair',
+        characterId: bond.characterId,
+        personaId: bond.personaId
+      }
     }).then(function (data) {
       closeSheet();
       if (data.memory) {
@@ -3332,7 +3369,11 @@
     if (!el) return;
     state.nowText = el.value.trim() || DATA.nowText;
     if (serverOnline) {
-      serverFetch('/memories/now', { method: 'PUT', body: { body: state.nowText } }).catch(apiToast);
+      var bond = currentBond();
+      serverFetch('/memories/now', {
+        method: 'PUT',
+        body: { body: state.nowText, characterId: bond.characterId, personaId: bond.personaId }
+      }).catch(apiToast);
     }
     save();
     renderMemories();
