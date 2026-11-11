@@ -102,10 +102,16 @@ fi
 c_say "3/6 测试"
 if [ "$DO_TEST" -eq 1 ]; then
   [ -x "$PY" ] || c_die "找不到 venv：$PY"
-  OUT=$( cd "$SRC" && "$PY" -m pytest -q 2>&1 | tail -3 )
-  echo "$OUT" | sed 's/^/    /'
-  echo "$OUT" | grep -qE '[0-9]+ passed' || c_die "测试不通过，已中止"
-  c_ok "通过"
+  LOG=/tmp/msyq-test.log
+  # 用退出码判断：本项目 pytest.ini 的 addopts 抑制了 summary 行，grep "passed" 抓不到
+  if ! ( cd "$SRC" && "$PY" -m pytest -q > "$LOG" 2>&1 ); then
+    tr '\r' '\n' < "$LOG" | grep -E '^(FAILED|ERROR)' | head -10 | sed 's/^/    /'
+    tail -5 "$LOG" | sed 's/^/    /'
+    c_die "测试不通过，已中止（SKIP? 用 --no-test）"
+  fi
+  N=$(tr '\r' '\n' < "$LOG" | grep -oE '[0-9]+ (passed|个通过)' | tail -1)
+  DOTS=$(tr '\r' '\n' < "$LOG" | grep -c '\.\.\.\.')
+  c_ok "通过${N:+（$N）}${N:-（$DOTS 行进度，无失败）}"
 else
   c_warn "跳过"
 fi
@@ -136,7 +142,9 @@ done
 find "$DST/server" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null
 chown -R miushi:miushi "$DST/server" "$DST/src" "$DST/dist" "$DST/assets" 2>/dev/null
 
-FILES=$(grep -cE '^[<>]f' "$CHANGED" 2>/dev/null || echo 0)
+# grep -c 无匹配时自己就会输出 0 并返回 1，再 `|| echo 0` 会拼成 "0\n0"
+FILES=$(grep -cE '^[<>]f' "$CHANGED" 2>/dev/null)
+FILES=${FILES:-0}
 if [ "$FILES" -eq 0 ]; then
   c_ok "无文件变化"
 else
@@ -154,17 +162,17 @@ fi
 # ---------- 6. 重启 + 验证 ----------
 c_say "6/6 重启 + 验证"
 systemctl restart "$SVC"
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  systemctl is-active --quiet "$SVC" && break
+# systemctl is-active 只说明进程起来了，uvicorn 还没 bind 时请求会直接失败。
+# 所以按端口实际可用为准，轮询等待（最多 30 秒）。
+CODE=000
+for _ in $(seq 1 30); do
   sleep 1
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:8100/ 2>/dev/null) || CODE=000
+  case "$CODE" in 200|302) break ;; esac
+  systemctl is-active --quiet "$SVC" || break
 done
-if ! systemctl is-active --quiet "$SVC"; then
-  journalctl -u "$SVC" -n 20 --no-pager | sed 's/^/    /'
-  c_die "服务没起来（可回滚：$0 --rollback $BK）"
-fi
-CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 http://127.0.0.1:8100/ 2>/dev/null || echo 000)
 if [ "$CODE" != "200" ] && [ "$CODE" != "302" ]; then
-  journalctl -u "$SVC" -n 20 --no-pager | sed 's/^/    /'
+  journalctl -u "$SVC" -n 25 --no-pager | sed 's/^/    /'
   c_die "本地 HTTP $CODE（可回滚：$0 --rollback $BK）"
 fi
 c_ok "服务 active，本地 HTTP $CODE"
