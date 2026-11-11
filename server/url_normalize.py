@@ -103,13 +103,23 @@ def join_base_path(base: str, path: str) -> str:
     return base + path
 
 
-def base_from_models_url(models_url: str) -> str:
-    """从探测成功的模型列表地址反推 Base URL。"""
+def base_from_models_url(models_url: str, protocol: str = "openai") -> str:
+    """从探测成功的模型列表地址反推 Base URL。
+
+    只拆掉末尾的模型列表路径 /models，保留它前面的 /v1 前缀：
+    https://opencode.ai/inference/go/v1/models -> https://opencode.ai/inference/go/v1，
+    不能把用户本来就带 /v1 的 Base URL 剥成 .../go（那样聊天会 404）。
+
+    Gemini 的 /v1beta/models 整段拆掉（Gemini base 约定不带版本前缀，保持原行为）；
+    Anthropic / Gemini 的 base 约定不带 /v1，探测地址里的 /v1 是列表接口补上的，不能写回。
+    """
     url = (models_url or "").split("?")[0].rstrip("/")
     url = re.sub(r"/v1beta/models/?$", "", url, flags=re.I)
-    url = re.sub(r"/v1/models/?$", "", url, flags=re.I)
     url = re.sub(r"/models/?$", "", url, flags=re.I)
-    return url.rstrip("/")
+    base = url.rstrip("/")
+    if (protocol or "").strip().lower() in ("anthropic", "gemini"):
+        base = _strip_v1(base)
+    return base
 
 
 def models_candidates(base: str, protocol: str = "openai") -> list[str]:

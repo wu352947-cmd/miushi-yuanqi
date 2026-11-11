@@ -263,8 +263,13 @@ async def save_connect(
         probe = await adapter.probe_models(provider, key)
         if probe.get("ok") and probe.get("ids"):
             connected = True
-            # 只填域名时用能通的那个地址改写 Base URL
-            probed_base = url_normalize.base_from_models_url(str(probe.get("url") or ""))
+            kind = str(probe.get("kind") or "")
+            # 只填域名时用能通的那个地址改写 Base URL；拆掉末尾 /models 时保留 /v1 前缀
+            # （Anthropic / Gemini 的 base 约定不带 /v1，由 base_from_models_url 按协议去掉）
+            probed_base = url_normalize.base_from_models_url(
+                str(probe.get("url") or ""),
+                kind or str(provider.get("protocol") or "openai"),
+            )
             if probed_base and probed_base.rstrip("/") != str(provider.get("baseUrl") or "").rstrip("/"):
                 changes.append(
                     {
@@ -275,7 +280,6 @@ async def save_connect(
                     }
                 )
                 provider["baseUrl"] = probed_base
-            kind = str(probe.get("kind") or "")
             if kind in ("anthropic", "gemini") and provider.get("protocol") != kind:
                 provider["protocol"] = kind
                 changes.append(
