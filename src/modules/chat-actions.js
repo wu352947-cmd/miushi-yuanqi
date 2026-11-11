@@ -195,7 +195,7 @@
       chat.messages = chatMessages;
       save();
       renderChat();
-      localFakeReply();
+      offlineDemoReply();
       toast('（离线演示）重新生成了一条。');
       return;
     }
@@ -211,7 +211,7 @@
     if (!chat) { toast('还没有对话。'); return; }
     closeSheet();
     if (!d2caServer()) {
-      localFakeReply();
+      offlineDemoReply();
       toast('（离线演示）接着写了一条。');
       return;
     }

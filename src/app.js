@@ -44,8 +44,8 @@
     return parts.join(' · ');
   }
 
-  /* 样稿占位：以后接真实 API 时，直接用响应里的 usage 与耗时 */
-  function fakeUsage(text) {
+  /* 只有离线演示回复用得到：按字数估一个像样的 usage 与耗时，别假装是真实数据。 */
+  function estimateUsage(text) {
     var prompt = 1120 + text.length * 21;
     var completion = 160 + text.length * 7;
     return {
@@ -1574,8 +1574,8 @@
     window.setTimeout(function () { refreshMemoriesQuiet(); }, 900);
   }
 
-  /* file:// 或后端断线时的本地演示回复（明确标成演示） */
-  function localFakeReply() {
+  /* file:// 或后端断线时的离线演示回复：正文来自本地 cannedReplies，界面上会明确标成演示。 */
+  function offlineDemoReply() {
     var typing = '<div class="msg msg--ai" id="typingMsg">' +
       avatarHTML(currentChar(), 'avatar avatar--ai msg__avatar') +
       '<div class="msg__body"><p class="msg__name"><span>' + esc(charName()) + '</span></p>' +
@@ -1588,7 +1588,7 @@
       if (old) old.remove();
       var reply = DATA.cannedReplies[cannedIndex % DATA.cannedReplies.length];
       cannedIndex += 1;
-      var fake = fakeUsage(reply);
+      var fake = estimateUsage(reply);
       sessionUsage.prompt += fake.usage.prompt_tokens;
       sessionUsage.completion += fake.usage.completion_tokens;
       sessionUsage.total += fake.usage.total_tokens;
@@ -1619,7 +1619,7 @@
     if (input) input.value = '';
     if (mode === 'normal') appendChat({ role: 'me', text: text, time: hm(new Date()) });
 
-    if (!SERVER_MODE || !serverOnline) { localFakeReply(); return; }
+    if (!SERVER_MODE || !serverOnline) { offlineDemoReply(); return; }
 
     var char = currentChar();
     if (!char) { appendErrorBubble('还没有角色：先到角色库新建或导入一位。'); return; }

@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 from typing import Any
 
 from . import auth, db, prompts, providers
 from .errors import classify_api_error
+
+LOG = logging.getLogger("msyq")
 
 CATEGORIES = ["关于我", "我们", "喜好", "日常", "约定"]
 DEFAULT_CATEGORY = "日常"
@@ -431,14 +434,17 @@ def schedule_extract_after_reply(character_id: str) -> None:
                 return
             marks[chat["id"]] = user_turns
             db.save_app_settings(conn, config)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 只是这一轮不抽，不能影响聊天
+        LOG.warning("自动记忆抽取的前置检查失败，这一轮跳过。", exc_info=True)
         return
 
     async def _run() -> None:
         try:
             await extract_memories(character_id)
         except Exception:  # noqa: BLE001 - 抽取失败不能影响聊天
-            pass
+            LOG.warning(
+                "后台自动记忆抽取失败（角色 %s），聊天不受影响。", character_id, exc_info=True
+            )
 
     try:
         asyncio.get_running_loop().create_task(_run())
