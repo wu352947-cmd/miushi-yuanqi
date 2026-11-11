@@ -4863,22 +4863,16 @@ html[data-theme] .record__fallback { color: var(--text); }
               <button class="cap" type="button" data-cap="web" aria-pressed="false">
                 <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.4"/><path d="M2.6 8h10.8M8 2.6c1.5 1.5 2.3 3.4 2.3 5.4S9.5 11.9 8 13.4C6.5 11.9 5.7 10 5.7 8S6.5 4.1 8 2.6z"/></svg>联网
               </button>
-              <button class="cap" type="button" data-cap="voice" aria-pressed="false">
-                <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.4 8h1.2M5.2 5.4v5.2M8 3.2v9.6M10.8 6v4M13.6 7.2v1.6"/></svg>语音
-              </button>
-              <button class="cap cap--think" id="thinkCap" type="button" data-open="reasoning" aria-haspopup="dialog" aria-pressed="true" aria-label="思考深度：高">
-                <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.4a3.6 3.6 0 0 1 2.1 6.5c-.3.2-.5.6-.5 1v.5H6.4v-.5c0-.4-.2-.8-.5-1A3.6 3.6 0 0 1 8 2.4z"/><path d="M6.6 12.2h2.8M7 13.8h2"/></svg><span class="cap__level" id="thinkCapLevel">高</span>
-              </button>
             </div>
             <div class="composer">
               <button class="round-btn composer__plus" type="button" data-open="attach" aria-label="添加附件">
                 <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 5v10M5 10h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               </button>
               <div class="composer__field">
-                <input class="composer__input" id="chatInput" type="text" placeholder="和缪诗说点什么…" aria-label="输入消息" enterkeyhint="send" autocomplete="off">
+                <textarea class="composer__input" id="chatInput" rows="1" placeholder="和缪诗说点什么…" aria-label="输入消息" autocomplete="off"></textarea>
               </div>
-              <button class="round-btn composer__wave" type="button" data-action="mic" aria-label="语音输入">
-                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 10h1.6M6.4 6.4v7.2M9.8 3.8v12.4M13.2 7v6M16.6 8.8v2.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              <button class="round-btn composer__think" id="thinkCap" type="button" data-open="reasoning" aria-haspopup="dialog" aria-pressed="true" aria-label="思考深度：高">
+                <span class="cap__level" id="thinkCapLevel">高</span>
               </button>
               <button class="round-btn composer__send" id="sendBtn" type="button" aria-label="发送">
                 <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3.4 10 16.4 4.6 13 16.2l-3.4-4.2-6.2-2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="m9.6 12 6.8-7.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
@@ -5274,6 +5268,7 @@ html[data-theme] .record__fallback { color: var(--text); }
 
       </main>
 
+      <div class="error-layer" id="errorLayer" aria-live="assertive"></div>
       <nav class="tabbar" id="tabbar" aria-label="主导航">
         <button class="tab" type="button" data-nav="chat" aria-current="false">
           <span class="tab__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4.6c4.3 0 7.7 2.8 7.7 6.2 0 3.4-3.4 6.2-7.7 6.2-.8 0-1.6-.1-2.3-.3l-3.5 2.3.8-2.9c-1.5-1.1-2.4-2.7-2.4-4.5 0-3.4 3-6.2 7.4-6.2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
@@ -10489,7 +10484,7 @@ const DATA = {
   var rawLocalSnapshot = null; /* 迁移用：file:// 或旧浏览器里的原始存档 */
   var SESSION_KEY = 'msyq.entered';
   var THEME_ORDER = ['pink', 'ice'];
-  var NO_TAB_VIEWS = ['characters', 'personas', 'books', 'providers', 'presets', 'stats'];
+  var NO_TAB_VIEWS = ['chat', 'characters', 'personas', 'books', 'providers', 'presets', 'stats'];
 
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
@@ -11925,11 +11920,13 @@ const DATA = {
         '</div>' +
       '</div>';
     }
+    var rpMe = resolvedPersona(chatOf(state.currentCharacterId), currentChar());
     return '<div class="msg msg--me"' + msgIdAttr + '>' +
       '<div class="msg__body">' +
         '<p class="msg__name"><span class="msg__time">' + esc(m.time) + editedTag + '</span></p>' +
         '<div class="bubble bubble--me">' + paragraphs(m.text) + '</div>' +
       '</div>' +
+      avatarHTML(rpMe && rpMe.persona, 'avatar avatar--me msg__avatar') +
     '</div>';
   }
 
@@ -12020,6 +12017,17 @@ const DATA = {
     return pump();
   }
 
+  /* 输入框跟着文字长高；光标在末尾时保持可见，改前面的文字不打扰 */
+  var CHAT_INPUT_MAX_H = 116;
+  function growChatInput(reset) {
+    var el = $('#chatInput');
+    if (!el) return;
+    if (reset) { el.style.height = 'auto'; el.scrollTop = 0; return; }
+    el.style.height = 'auto';
+    var h = Math.min(el.scrollHeight, CHAT_INPUT_MAX_H);
+    el.style.height = h + 'px';
+    if (el.selectionStart === el.value.length) el.scrollTop = el.scrollHeight;
+  }
   function beginStreamBubble() {
     var typing = '<div class="msg msg--ai" id="streamMsg">' +
       avatarHTML(currentChar(), 'avatar avatar--ai msg__avatar') +
@@ -12053,16 +12061,25 @@ const DATA = {
     el.removeAttribute('hidden');
   }
 
+  /* 报错用悬浮卡片：不写进对话、不占聊天记录、同一条 15 秒内只弹一次 */
+  var errorShownAt = {};
   function appendErrorBubble(text) {
-    var msg = { role: 'ai', text: text, time: hm(new Date()), error: true, uiOnly: true };
-    chatMessages.push(msg);
-    var html = '<div class="msg msg--ai">' +
-      avatarHTML(currentChar(), 'avatar avatar--ai msg__avatar') +
-      '<div class="msg__body"><p class="msg__name"><span>' + esc(charName()) + '</span><span class="msg__time">' + esc(msg.time) + '</span></p>' +
-      '<div class="bubble bubble--ai"><p>' + esc(text) + '</p></div>' +
-      '<p class="fallback-note">这次没有回复成功；上面是中文原因，不是原始报错。</p></div></div>';
-    $('#chatList').insertAdjacentHTML('beforeend', html);
-    scrollChatBottom(true);
+    var message = String(text || '').trim();
+    if (!message) return;
+    var key = message.slice(0, 60);
+    var now = Date.now();
+    if (errorShownAt[key] && now - errorShownAt[key] < 15000) return;
+    errorShownAt[key] = now;
+
+    var layer = $('#errorLayer');
+    if (!layer) { toast(message); return; }
+    var card = document.createElement('div');
+    card.className = 'error-card';
+    card.innerHTML = '<span class="error-card__text">' + esc(message) + '</span>' +
+      '<button class="error-card__close" type="button" aria-label="关闭">×</button>';
+    card.querySelector('.error-card__close').addEventListener('click', function () { card.remove(); });
+    layer.appendChild(card);
+    window.setTimeout(function () { if (card.parentNode) card.remove(); }, 8000);
   }
 
   function finishStream(done, streamText, errInfo) {
@@ -12153,7 +12170,7 @@ const DATA = {
     var text = opts.text !== undefined ? String(opts.text).trim() : (input ? input.value.trim() : '');
     if (mode === 'normal' && !text) { if (input) input.focus(); return; }
     if (chatBusy) return;
-    if (input) input.value = '';
+    if (input) { input.value = ''; growChatInput(true); }
     if (mode === 'normal') appendChat({ role: 'me', text: text, time: hm(new Date()) });
 
     if (!SERVER_MODE || !serverOnline) { offlineDemoReply(); return; }
@@ -14298,8 +14315,10 @@ const DATA = {
 
     $('#sendBtn').addEventListener('click', sendChat);
     $('#chatInput').addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); sendChat(); }
+      // Shift+Enter 换行；单独 Enter 才是发送；输入法组字中不发送
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); }
     });
+    $('#chatInput').addEventListener('input', function () { growChatInput(false); });
 
     $('#memorySearch').addEventListener('input', function (e) {
       memoryQuery = e.target.value.trim();

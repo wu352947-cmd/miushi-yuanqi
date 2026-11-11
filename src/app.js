@@ -13,7 +13,7 @@
   var rawLocalSnapshot = null; /* 迁移用：file:// 或旧浏览器里的原始存档 */
   var SESSION_KEY = 'msyq.entered';
   var THEME_ORDER = ['pink', 'ice'];
-  var NO_TAB_VIEWS = ['characters', 'personas', 'books', 'providers', 'presets', 'stats'];
+  var NO_TAB_VIEWS = ['chat', 'characters', 'personas', 'books', 'providers', 'presets', 'stats'];
 
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
@@ -1449,11 +1449,13 @@
         '</div>' +
       '</div>';
     }
+    var rpMe = resolvedPersona(chatOf(state.currentCharacterId), currentChar());
     return '<div class="msg msg--me"' + msgIdAttr + '>' +
       '<div class="msg__body">' +
         '<p class="msg__name"><span class="msg__time">' + esc(m.time) + editedTag + '</span></p>' +
         '<div class="bubble bubble--me">' + paragraphs(m.text) + '</div>' +
       '</div>' +
+      avatarHTML(rpMe && rpMe.persona, 'avatar avatar--me msg__avatar') +
     '</div>';
   }
 
@@ -1544,6 +1546,17 @@
     return pump();
   }
 
+  /* 输入框跟着文字长高；光标在末尾时保持可见，改前面的文字不打扰 */
+  var CHAT_INPUT_MAX_H = 116;
+  function growChatInput(reset) {
+    var el = $('#chatInput');
+    if (!el) return;
+    if (reset) { el.style.height = 'auto'; el.scrollTop = 0; return; }
+    el.style.height = 'auto';
+    var h = Math.min(el.scrollHeight, CHAT_INPUT_MAX_H);
+    el.style.height = h + 'px';
+    if (el.selectionStart === el.value.length) el.scrollTop = el.scrollHeight;
+  }
   function beginStreamBubble() {
     var typing = '<div class="msg msg--ai" id="streamMsg">' +
       avatarHTML(currentChar(), 'avatar avatar--ai msg__avatar') +
@@ -1577,16 +1590,25 @@
     el.removeAttribute('hidden');
   }
 
+  /* 报错用悬浮卡片：不写进对话、不占聊天记录、同一条 15 秒内只弹一次 */
+  var errorShownAt = {};
   function appendErrorBubble(text) {
-    var msg = { role: 'ai', text: text, time: hm(new Date()), error: true, uiOnly: true };
-    chatMessages.push(msg);
-    var html = '<div class="msg msg--ai">' +
-      avatarHTML(currentChar(), 'avatar avatar--ai msg__avatar') +
-      '<div class="msg__body"><p class="msg__name"><span>' + esc(charName()) + '</span><span class="msg__time">' + esc(msg.time) + '</span></p>' +
-      '<div class="bubble bubble--ai"><p>' + esc(text) + '</p></div>' +
-      '<p class="fallback-note">这次没有回复成功；上面是中文原因，不是原始报错。</p></div></div>';
-    $('#chatList').insertAdjacentHTML('beforeend', html);
-    scrollChatBottom(true);
+    var message = String(text || '').trim();
+    if (!message) return;
+    var key = message.slice(0, 60);
+    var now = Date.now();
+    if (errorShownAt[key] && now - errorShownAt[key] < 15000) return;
+    errorShownAt[key] = now;
+
+    var layer = $('#errorLayer');
+    if (!layer) { toast(message); return; }
+    var card = document.createElement('div');
+    card.className = 'error-card';
+    card.innerHTML = '<span class="error-card__text">' + esc(message) + '</span>' +
+      '<button class="error-card__close" type="button" aria-label="关闭">×</button>';
+    card.querySelector('.error-card__close').addEventListener('click', function () { card.remove(); });
+    layer.appendChild(card);
+    window.setTimeout(function () { if (card.parentNode) card.remove(); }, 8000);
   }
 
   function finishStream(done, streamText, errInfo) {
@@ -1677,7 +1699,7 @@
     var text = opts.text !== undefined ? String(opts.text).trim() : (input ? input.value.trim() : '');
     if (mode === 'normal' && !text) { if (input) input.focus(); return; }
     if (chatBusy) return;
-    if (input) input.value = '';
+    if (input) { input.value = ''; growChatInput(true); }
     if (mode === 'normal') appendChat({ role: 'me', text: text, time: hm(new Date()) });
 
     if (!SERVER_MODE || !serverOnline) { offlineDemoReply(); return; }
@@ -3822,8 +3844,10 @@
 
     $('#sendBtn').addEventListener('click', sendChat);
     $('#chatInput').addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); sendChat(); }
+      // Shift+Enter 换行；单独 Enter 才是发送；输入法组字中不发送
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); }
     });
+    $('#chatInput').addEventListener('input', function () { growChatInput(false); });
 
     $('#memorySearch').addEventListener('input', function (e) {
       memoryQuery = e.target.value.trim();
