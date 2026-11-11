@@ -1,0 +1,36 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: server/requirements.txt
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r server/requirements.txt
+          pip install pytest-cov
+
+      - name: 跑测试（带覆盖率）
+        # 测试自己会造临时库和 APP_SECRET，不连生产数据库、不发真实请求
+        run: python -m pytest --cov=server --cov-report=term-missing --cov-fail-under=70
+
+      - name: 确认 dist 能构建
+        # dist 是入库产物，但源码改了没重新构建会不一致；这里只验证构建脚本不报错
+        run: |
+          if [ -f scripts/build.mjs ]; then
+            node scripts/build.mjs
+          fi
