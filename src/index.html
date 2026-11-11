@@ -551,6 +551,11 @@
                 <span class="row-main"><span class="row-title serif">壁纸</span><span class="row-sub">按页面更换，可恢复默认</span></span>
                 <button class="value-btn" type="button" data-open="theme">前往</button>
               </div>
+              <div class="list-row list-row--static">
+                <span class="row-icon"><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="6.6"/><path d="M10 3.4v6.6l4.2 2.6" /><path d="M10 2.2v2M10 15.8v2"/></svg></span>
+                <span class="row-main"><span class="row-title serif">上下文压缩</span><span class="row-sub">快满时提醒，压完腾出空间</span></span>
+                <button class="value-btn" type="button" data-open="contextSettings">设置</button>
+              </div>
             </div>
 
             <article class="card about-card">
@@ -679,6 +684,23 @@
           <span class="tab__label">我的</span>
         </button>
       </nav>
+
+      <!-- 灵动岛式提醒：居中浮起，不挡页面（只有按钮可点） -->
+      <div class="island-layer" id="islandLayer" hidden>
+        <div class="island" id="island" role="alertdialog" aria-labelledby="islandTitle">
+          <div class="island__top">
+            <div class="island__ring" id="islandRing"><span id="islandPct">0%</span></div>
+            <div class="island__text">
+              <p class="island__title" id="islandTitle">上下文快满了</p>
+              <p class="island__desc" id="islandDesc"></p>
+            </div>
+          </div>
+          <div class="island__actions">
+            <button class="island__btn" type="button" data-island="later">继续玩</button>
+            <button class="island__btn island__btn--primary" type="button" data-island="go">压缩</button>
+          </div>
+        </div>
+      </div>
 
       <div class="sheet-layer" id="sheetLayer" aria-hidden="true">
         <div class="sheet-scrim" data-close></div>

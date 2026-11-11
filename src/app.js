@@ -39,6 +39,89 @@
     return String(n);
   }
 
+  /* ---------- 灵动岛式提醒 ----------
+     不遮页面、不拦操作，居中浮起，只有按钮可点。 */
+  var islandAction = null;
+  var islandTimer = null;
+  function showIsland(opts) {
+    opts = opts || {};
+    var layer = document.getElementById('islandLayer');
+    var el = document.getElementById('island');
+    if (!layer || !el) return;
+    var pct = Math.max(0, Math.min(100, Number(opts.percent) || 0));
+    var ring = document.getElementById('islandRing');
+    if (ring) ring.style.setProperty('--p', String(pct));
+    var pctEl = document.getElementById('islandPct');
+    if (pctEl) pctEl.textContent = pct + '%';
+    var titleEl = document.getElementById('islandTitle');
+    if (titleEl) titleEl.textContent = opts.title || '上下文快满了';
+    var descEl = document.getElementById('islandDesc');
+    if (descEl) descEl.textContent = opts.desc || '';
+    islandAction = typeof opts.onGo === 'function' ? opts.onGo : null;
+    if (islandTimer) { clearTimeout(islandTimer); islandTimer = null; }
+    layer.hidden = false;
+    el.classList.remove('is-out', 'is-in');
+    void el.offsetWidth;          // 强制重排，让动画每次都能重放
+    el.classList.add('is-in');
+  }
+  function hideIsland() {
+    var layer = document.getElementById('islandLayer');
+    var el = document.getElementById('island');
+    if (!layer || !el || layer.hidden) return;
+    el.classList.remove('is-in');
+    el.classList.add('is-out');
+    islandTimer = setTimeout(function () {
+      layer.hidden = true;
+      el.classList.remove('is-out');
+      islandTimer = null;
+    }, 280);
+  }
+  var contextModelPicker = false;
+  function previewContextIsland() {
+    var used = contextUsed(state.chats[state.currentCharacterId]);
+    var budget = contextBudget();
+    var pct = budget > 0 ? Math.round(used / budget * 100) : 0;
+    if (!pct) pct = 72;
+    pct = Math.max(62, Math.min(95, pct));
+    showIsland({
+      percent: pct,
+      title: '上下文快满了',
+      desc: '压缩后能腾出约 ' + fmtTokens(Math.round(budget * pct / 100 * 0.6)) +
+        '，前面的剧情会存成摘要',
+      onGo: function () { toast('压缩逻辑还没接上，这只是样式预览。'); }
+    });
+  }
+  (function bindIsland() {
+    function bind() {
+      var el = document.getElementById('island');
+      if (!el) return;
+      el.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-island]');
+        if (!btn) return;
+        e.preventDefault();
+        islandClick(btn);
+      });
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', bind);
+    } else {
+      bind();
+    }
+  })();
+
+  function islandClick(el) {
+    var act = el.getAttribute('data-island');
+    if (act === 'later') { hideIsland(); return true; }
+    if (act === 'go') {
+      var fn = islandAction;
+      islandAction = null;
+      hideIsland();
+      if (fn) fn();
+      return true;
+    }
+    return false;
+  }
+
   /* ---------- 上下文占用 ----------
      已用 token 取「上一轮的 prompt_tokens」——上游给的真实值，比本地估算准。
      预算和后端 history_budget() 保持一致：min(32K, 窗口×60%)。 */
@@ -4465,6 +4548,62 @@
     updateThinkCap();
     toast('思考深度：' + (REASON_TEXT[lv] || lv));
   }
+  SHEETS.contextSettings = function () {
+    var auto = state.settings.contextAuto !== false;
+    var th = Number(state.settings.contextThreshold) || 60;
+    var cmId = state.settings.compressModelId || '';
+    var models = state.models || [];
+    var cm = null;
+    for (var i = 0; i < models.length; i++) {
+      if (models[i].id === cmId) { cm = models[i]; break; }
+    }
+    var body = '<div class="reason-desc">上下文快满时提醒你，压完能腾出空间，前面的剧情会变成一段摘要。不点「压缩」就不会动。</div>';
+
+    body += '<div class="list-row list-row--static" style="margin-top:12px">' +
+      '<span class="row-main"><span class="row-title serif">自动提醒</span>' +
+      '<span class="row-sub">超过阈值时弹出提醒</span></span>' +
+      '<button class="switch" type="button" role="switch" data-a2="ctx-toggle" aria-checked="' +
+      (auto ? 'true' : 'false') + '"><span></span></button></div>';
+
+    body += '<div class="list-row list-row--static list-row--stack">' +
+      '<span class="row-main"><span class="row-title serif">提醒阈值</span>' +
+      '<span class="row-sub">用到多少时提醒</span></span>' +
+      '<div class="seg-slider" role="group" aria-label="提醒阈值">' +
+      [60, 75, 90].map(function (v) {
+        return '<button class="seg-slider__btn' + (th === v ? ' is-on' : '') +
+          '" type="button" data-a2="ctx-threshold" data-value="' + v + '">' + v + '%</button>';
+      }).join('') + '</div></div>';
+
+    body += '<div class="list-row list-row--static">' +
+      '<span class="row-main"><span class="row-title serif">压缩用哪个模型</span>' +
+      '<span class="row-sub">' + (cm ? esc(cm.name) : '默认用当前聊天模型') + '</span></span>' +
+      '<button class="value-btn" type="button" data-a2="ctx-model">' +
+      (contextModelPicker ? '收起' : '选择') + '</button></div>';
+
+    if (contextModelPicker) {
+      body += '<div class="reason-scale" style="padding:6px 2px 0">' +
+        '<span>共 ' + models.length + ' 个</span><span>点一下选中</span></div>';
+      body += '<div class="picker-list">';
+      models.slice(0, 40).forEach(function (m) {
+        var on = m.id === cmId;
+        body += '<button class="picker-row' + (on ? ' is-on' : '') + '" type="button" ' +
+          'data-a2="ctx-set-model" data-value="' + esc(m.id) + '">' +
+          '<span class="picker-row__name">' + esc(m.name) + '</span>' +
+          '<span class="picker-row__meta">' + (m.context ? fmtTokens(m.context) : '—') + '</span>' +
+          (on ? '<span class="picker-row__check">✓</span>' : '') + '</button>';
+      });
+      body += '</div>';
+    }
+
+    body += '<p class="a2-note" style="margin-top:12px">提醒样式：屏幕中央浮起一个胶囊，不挡你继续聊。</p>';
+    body += '<button class="btn btn--soft" type="button" data-a2="ctx-preview" style="margin-top:8px">预览提醒样式</button>';
+
+    return {
+      title: '上下文压缩',
+      body: body,
+      foot: '<button class="btn" type="button" data-close>完成</button>'
+    };
+  };
   function selectReasoningLevel(level) {
     var m = currentModel();
     if (!reasoningSupported(m)) return;
@@ -4496,6 +4635,31 @@
 
   /* ---------------- A2 交互分发 ---------------- */
   function handleA2Action(action, el) {
+    if (action === 'ctx-preview') { previewContextIsland(); return true; }
+    if (action === 'ctx-toggle') {
+      state.settings.contextAuto = !state.settings.contextAuto;
+      save();
+      openSheet('contextSettings');
+      return true;
+    }
+    if (action === 'ctx-threshold') {
+      state.settings.contextThreshold = Number(el.getAttribute('data-value')) || 60;
+      save();
+      openSheet('contextSettings');
+      return true;
+    }
+    if (action === 'ctx-model') {
+      contextModelPicker = !contextModelPicker;
+      openSheet('contextSettings');
+      return true;
+    }
+    if (action === 'ctx-set-model') {
+      state.settings.compressModelId = el.getAttribute('data-value') || '';
+      contextModelPicker = false;
+      save();
+      openSheet('contextSettings');
+      return true;
+    }
     if (action === 'new-provider') { openSheet('providerTemplates'); return true; }
     if (action === 'import-provider') { var fp = document.getElementById('fileProvider'); if (fp) fp.click(); return true; }
     if (action === 'export-providers') { exportTarget = ''; openSheet('providerExport'); return true; }
@@ -4525,6 +4689,8 @@
   }
 
   function handleA2Click(kind, el) {
+    // 先问一遍通用分发：它只认自己那批，不认就返回 false，继续往下走
+    if (typeof handleA2Action === 'function' && handleA2Action(kind, el) === true) return;
     var id = el.getAttribute('data-id') || '';
     var value = el.getAttribute('data-value') || '';
     if (kind === 'provider-open') {

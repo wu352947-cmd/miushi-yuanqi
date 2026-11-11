@@ -2662,3 +2662,118 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+
+/* ---------- 灵动岛式提醒 (island-v1) ---------- */
+.island-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 78;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  pointer-events: none;   /* 不挡页面操作 */
+}
+.island {
+  pointer-events: auto;
+  width: min(300px, calc(100vw - 56px));
+  padding: 17px 19px 14px;
+  border-radius: 30px;
+  background: rgba(32, 25, 30, .80);
+  backdrop-filter: blur(28px) saturate(1.55);
+  -webkit-backdrop-filter: blur(28px) saturate(1.55);
+  box-shadow:
+    0 26px 64px rgba(0, 0, 0, .44),
+    0 0 0 .5px rgba(255, 255, 255, .16) inset,
+    0 1px 0 rgba(255, 255, 255, .06) inset;
+  color: #fff;
+  opacity: 0;
+  transform: scale(.8);
+  will-change: transform, opacity;
+}
+.island.is-in {
+  animation: islandIn .52s cubic-bezier(.22, 1.24, .36, 1) forwards;
+}
+@keyframes islandIn {
+  0%   { opacity: 0; transform: scale(.70); filter: blur(9px); }
+  62%  { opacity: 1; transform: scale(1.035); filter: blur(0); }
+  100% { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+.island.is-out {
+  animation: islandOut .26s ease forwards;
+}
+@keyframes islandOut {
+  to { opacity: 0; transform: scale(.84); filter: blur(7px); }
+}
+.island__top {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.island__ring {
+  --p: 0;
+  position: relative;
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 50%;
+  background: conic-gradient(
+    #ffa184 calc(var(--p) * 1%),
+    rgba(255, 255, 255, .13) 0
+  );
+  display: grid;
+  place-items: center;
+}
+.island__ring::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: #241c21;
+}
+.island__ring span {
+  position: relative;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+.island__text { min-width: 0; flex: 1; }
+.island__title {
+  margin: 0 0 3px;
+  font-family: var(--serif);
+  font-size: 14.5px;
+  line-height: 1.3;
+  letter-spacing: .01em;
+}
+.island__desc {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 11px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, .58);
+}
+.island__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 13px;
+}
+.island__btn {
+  flex: 1;
+  height: 33px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .13);
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: .02em;
+  transition: transform .14s ease, background .18s ease;
+}
+.island__btn:active { transform: scale(.96); }
+.island__btn--primary {
+  background: linear-gradient(135deg, #ffa98a, #f2795c);
+  color: #2b1a15;
+  font-weight: 600;
+}
