@@ -73,6 +73,20 @@ node scripts/build.mjs --inline-covers
 
 直接双击 `dist/index.html`（`file://`）打不开后端，聊天到不了模型。请用上面的方式启动。
 
+## 测试
+
+```bash
+.venv/bin/pip install pytest-cov          # 第一次跑覆盖率才需要
+.venv/bin/python -m pytest --cov=server --cov-report=term-missing
+```
+
+`server/tests/` 里每个用例都用临时 SQLite 库，模型调用全部 mock，
+不会碰真实数据，也不会发真实请求。业务代码（4,696 条语句）当前覆盖率 76.77%；
+`.coveragerc` 把测试文件本身排除在统计之外。
+
+每次 push 到 `main`，GitHub Actions 会跑同一套测试，覆盖率低于 70% 直接失败。
+覆盖率报告里的 `Missing` 列是没被任何用例走到的行号，补测试时照着看就行。
+
 ## 配置
 
 复制 `server/.env.example` 为仓库根目录的 `.env`。`.env` 不会进 git。这些变量也可以直接写在环境里，不必使用文件。

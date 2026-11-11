@@ -1,0 +1,16 @@
+# coverage 配置：统计后端业务代码，不把测试自己算进去。
+[run]
+source = server
+omit =
+    server/tests/*
+    server/__init__.py
+    server/routers/__init__.py
+
+[report]
+# 这些行不算「未覆盖」：类型检查分支、纯注释性占位
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError
+show_missing = True
+skip_empty = True

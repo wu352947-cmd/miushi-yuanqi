@@ -39,3 +39,6 @@ dist/*.prev.html
 .done.*
 .exit
 .exit.*
+.coverage
+htmlcov/
+coverage.xml
