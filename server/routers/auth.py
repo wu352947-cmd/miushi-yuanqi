@@ -33,8 +33,19 @@ def me(request: Request) -> dict:
 def login(payload: LoginIn, request: Request, response: Response, conn=Depends(get_conn)) -> dict:
     if not auth.auth_required():
         return {"ok": True, "devMode": True, "message": "开发模式：没有设置登录密码。"}
+    key = auth.client_key(request)
+    wait = auth.login_blocked(key)
+    if wait:
+        raise ApiError("ratelimit", "密码错太多次了，" + str(wait) + " 秒后再试。", status=429)
     if not auth.check_password(payload.password):
-        raise ApiError("auth", "密码不对，再试一次。", status=401)
+        fails = auth.record_login_fail(key)
+        left = max(0, auth.LOGIN_MAX_FAILS - fails)
+        if left:
+            hint = "密码不对，再试一次。（还可以试 " + str(left) + " 次）"
+        else:
+            hint = "密码不对。短时间内错太多次，先等 5 分钟。"
+        raise ApiError("auth", hint, status=401)
+    auth.clear_login_fails(key)
     token, expires = auth.create_session(conn)
     response.set_cookie(
         auth.COOKIE_NAME,

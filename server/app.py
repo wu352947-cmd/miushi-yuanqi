@@ -38,7 +38,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from starlette.exceptions import HTTPException as StarletteHTTPException  # noqa: E402
 
-from server import auth, db, providers  # noqa: E402
+from server import auth, db, providers, usage as usage_mod  # noqa: E402
 from server.errors import MESSAGES, ApiError  # noqa: E402
 from server.routers import (  # noqa: E402
     auth as auth_routes,
@@ -66,6 +66,13 @@ DIST_INDEX = ROOT_DIR / "dist" / "index.html"
 async def lifespan(_app: FastAPI):
     db.init_db()
     LOG.info("数据库：%s", db.db_path())
+    try:
+        with db.get_db() as conn:
+            removed = usage_mod.prune_usage(conn)
+        if removed:
+            LOG.info("清理了 %d 条超过保留期（%d 天）的 usage 记录。", removed, usage_mod.usage_keep_days())
+    except Exception:  # noqa: BLE001 - 清理失败不该拦住服务启动
+        LOG.warning("usage 清理失败，已跳过（不影响服务）。", exc_info=True)
     if not (os.environ.get("APP_SECRET") or "").strip():
         LOG.warning("未设置 APP_SECRET：正在使用开发用的弱密钥加密 API Key。请按 .env.example 生成一个。")
     if auth.dev_mode():

@@ -139,6 +139,56 @@ def me_payload(request) -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- 登录限流
+# 单进程内存计数。当前服务是单实例、只监听 127.0.0.1，够用。
+# 什么时候需要改：如果哪天挂到 nginx 反代后面，client.host 会全部变成
+# 127.0.0.1，那时必须改读 X-Real-IP（下面已经优先取它）。
+LOGIN_MAX_FAILS = 10
+LOGIN_WINDOW = 300  # 秒
+
+_login_fails: dict[str, list[float]] = {}
+
+
+def client_key(request) -> str:
+    """请求来源标识：优先反代写的 X-Real-IP，否则用 TCP 对端地址。"""
+    forwarded = (request.headers.get("x-real-ip") or "").strip()
+    if forwarded:
+        return forwarded[:64]
+    client = getattr(request, "client", None)
+    return (getattr(client, "host", "") or "unknown")[:64]
+
+
+def login_blocked(key: str) -> int:
+    """还被挡着吗？返回剩余秒数，0 表示可以尝试。"""
+    now = time.time()
+    stamps = [t for t in _login_fails.get(key, []) if now - t < LOGIN_WINDOW]
+    if not stamps:
+        _login_fails.pop(key, None)
+        return 0
+    _login_fails[key] = stamps
+    if len(stamps) >= LOGIN_MAX_FAILS:
+        return max(1, int(LOGIN_WINDOW - (now - stamps[0])) + 1)
+    return 0
+
+
+def record_login_fail(key: str) -> int:
+    """记一次失败，返回窗口内的累计失败次数。"""
+    now = time.time()
+    stamps = [t for t in _login_fails.get(key, []) if now - t < LOGIN_WINDOW]
+    stamps.append(now)
+    _login_fails[key] = stamps
+    # 顺手清掉过期条目，避免长期运行内存慢慢堆积
+    if len(_login_fails) > 200:
+        for stale in [k for k, v in _login_fails.items() if not v or now - v[-1] > LOGIN_WINDOW]:
+            _login_fails.pop(stale, None)
+    return len(stamps)
+
+
+def clear_login_fails(key: str) -> None:
+    """登录成功后清零，免得正常用户被自己之前的错别字连累。"""
+    _login_fails.pop(key, None)
+
+
 # --------------------------------------------------------------------------- API Key 加密
 @lru_cache(maxsize=1)
 def _fernet_for(secret: str) -> Fernet:

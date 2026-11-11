@@ -410,3 +410,28 @@ def usage_summary(conn) -> dict[str, Any]:
         "bars": days,
         "barLabels": labels,
     }
+
+
+# --------------------------------------------------------------------------- 保留期清理
+def usage_keep_days() -> int:
+    """明细保留天数，默认 400（统计页热力图只看近一年，留点余量）。"""
+    try:
+        return max(30, int(os.environ.get("MSYQ_USAGE_KEEP_DAYS") or 400))
+    except (TypeError, ValueError):
+        return 400
+
+
+def prune_usage(conn, keep_days: int | None = None) -> int:
+    """删掉超出保留期的 usage 明细，返回删除条数。
+
+    这张表只增不删的话会一直长：每条回复一行，长期跑下去聚合查询会越来越慢，
+    而用户实际上永远看不到一年以前的数据。
+    """
+    days = keep_days if keep_days is not None else usage_keep_days()
+    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    cur = conn.execute("DELETE FROM usage WHERE at < ? AND at != ''", (cutoff,))
+    try:
+        removed = int(cur.rowcount or 0)
+    except (TypeError, ValueError):
+        removed = 0
+    return max(0, removed)
