@@ -14,16 +14,27 @@ import os
 import re
 import time
 from typing import Any, AsyncIterator
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
+from . import __version__ as APP_VERSION
 from .errors import classify_api_error, reasoning_related_error
 from .prompts import estimate_tokens
 from .reasoning import build_reasoning_params, default_level
 from .url_normalize import base_from_models_url, join_base_path, models_candidates
 
 TEST_TIMEOUT = 8.0
+
+# OpenCode Go / 按量 Console 要求自报身份，并在每次请求带稳定会话头。
+# https://opencode.ai/docs/go — User-Agent 不能是 HTTP 库默认名，
+# x-opencode-session 同一段对话必须复用，不能每次随机。
+OPENCODE_USER_AGENT = "miushi-yuanqi/" + str(APP_VERSION or "0.1.0")
+OPENCODE_SESSION_MODELS = "miushi-yuanqi-models"
+OPENCODE_SESSION_TEST = "miushi-yuanqi-test"
+OPENCODE_SESSION_BALANCE = "miushi-yuanqi-balance"
+OPENCODE_SESSION_CHAT = "miushi-yuanqi-chat"
+_SESSION_UNSAFE = re.compile(r"[^A-Za-z0-9._~+-]")
 
 # 中转站转发方式（第 D2 轮第一块第 5 条）：默认 auto，可在高级设置里改
 FORWARD_MODES = (
@@ -204,19 +215,73 @@ def chat_url(provider: dict[str, Any], model: dict[str, Any], stream: bool, api_
     return _join(base, path)
 
 
-def _headers(provider: dict[str, Any], api_key: str) -> dict[str, str]:
+def is_opencode_url(url: str) -> bool:
+    """是否为 OpenCode Console / Go 的出站地址。
+
+    只认主机 opencode.ai，且路径以 /inference（含 /inference/go 与按量 /inference）
+    或 /zen/go 开头。其它主机、文档页、以及只是路径里碰巧出现这些词的地址都不算。
+    """
+    raw = (url or "").strip()
+    if not raw:
+        return False
+    try:
+        parts = urlsplit(raw)
+    except ValueError:
+        return False
+    host = (parts.hostname or "").rstrip(".").lower()
+    if host != "opencode.ai":
+        return False
+    segments = [segment for segment in (parts.path or "").split("/") if segment]
+    if not segments:
+        return False
+    head = segments[0].casefold()
+    if head == "inference":
+        return True
+    return head == "zen" and len(segments) > 1 and segments[1].casefold() == "go"
+
+
+def _stable_session(session_id: str | None, fallback: str) -> str:
+    """会话头要稳定，且不能带换行。空的用固定兜底，不每次新造一个。"""
+    raw = str(session_id or "")
+    raw = raw.split("\r", 1)[0].split("\n", 1)[0].strip()
+    cleaned = _SESSION_UNSAFE.sub("", raw)
+    if not cleaned:
+        return fallback
+    return cleaned[:128]
+
+
+def opencode_request_headers(
+    url: str,
+    session_id: str | None = None,
+    fallback: str = OPENCODE_SESSION_CHAT,
+) -> dict[str, str]:
+    """OpenCode 地址才加 User-Agent 与 x-opencode-session；其它地址不加。"""
+    if not is_opencode_url(url):
+        return {}
+    return {
+        "User-Agent": OPENCODE_USER_AGENT,
+        "x-opencode-session": _stable_session(session_id, fallback),
+    }
+
+
+def _headers(
+    provider: dict[str, Any],
+    api_key: str,
+    url: str = "",
+    session_id: str | None = None,
+    session_fallback: str = OPENCODE_SESSION_CHAT,
+) -> dict[str, str]:
     proto = protocol_of(provider)
     headers: dict[str, str] = {"Content-Type": "application/json"}
-    if proto == "gemini":
-        return headers
     if proto == "anthropic":
         headers["x-api-key"] = api_key
         headers["anthropic-version"] = "2023-06-01"
-        return headers
-    headers["Authorization"] = "Bearer " + api_key
-    if proto == "openrouter":
-        headers["HTTP-Referer"] = "http://localhost/"
-        headers["X-Title"] = "miushi-yuanqi"
+    elif proto != "gemini":
+        headers["Authorization"] = "Bearer " + api_key
+        if proto == "openrouter":
+            headers["HTTP-Referer"] = "http://localhost/"
+            headers["X-Title"] = "miushi-yuanqi"
+    headers.update(opencode_request_headers(url, session_id, session_fallback))
     return headers
 
 
@@ -270,8 +335,13 @@ def build_request(
     disable_reasoning: bool = False,
     reasoning_level: str | None = None,
     drop_sampling: list[str] | None = None,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
-    """返回 {url, headers, body, kind, model_key, reasoning}。"""
+    """返回 {url, headers, body, kind, model_key, reasoning}。
+
+    session_id 是这段对话的稳定 id（一般用聊天 id）。OpenCode 会把它放进
+    x-opencode-session；其它提供商忽略。
+    """
     proto = protocol_of(provider)
     segments = prompt.get("segments") or []
     sampling = prompt.get("sampling") or {}
@@ -315,7 +385,7 @@ def build_request(
             body["thinking"]["display"] = "summarized"
         for field in drop:
             body.pop(field, None)
-        return {"url": url, "headers": _headers(provider, api_key), "body": body, "kind": "anthropic", "model_key": model_key, "reasoning": built}
+        return {"url": url, "headers": _headers(provider, api_key, url, session_id), "body": body, "kind": "anthropic", "model_key": model_key, "reasoning": built}
 
     if proto == "gemini":
         system_text = prompt.get("system_text") or ""
@@ -346,7 +416,7 @@ def build_request(
         body = {"contents": contents, "generationConfig": gen}
         if system_text:
             body["systemInstruction"] = {"parts": [{"text": system_text}]}
-        return {"url": url, "headers": _headers(provider, api_key), "body": body, "kind": "gemini", "model_key": model_key, "reasoning": built}
+        return {"url": url, "headers": _headers(provider, api_key, url, session_id), "body": body, "kind": "gemini", "model_key": model_key, "reasoning": built}
 
     if proto == "openai_responses":
         system_text = prompt.get("system_text") or ""
@@ -371,7 +441,7 @@ def build_request(
             if params.get("model"):
                 body["model"] = params["model"]
                 model_key = str(params["model"])
-        return {"url": url, "headers": _headers(provider, api_key), "body": body, "kind": "responses", "model_key": model_key, "reasoning": built}
+        return {"url": url, "headers": _headers(provider, api_key, url, session_id), "body": body, "kind": "responses", "model_key": model_key, "reasoning": built}
 
     # OpenAI 兼容 / DeepSeek / OpenRouter / 中转站
     messages = []
@@ -396,7 +466,7 @@ def build_request(
             model_key = str(params["model"])
     if built.get("useMaxCompletionTokens") and "max_tokens" in body:
         body["max_completion_tokens"] = body.pop("max_tokens")
-    return {"url": url, "headers": _headers(provider, api_key), "body": body, "kind": "openai", "model_key": model_key, "reasoning": built}
+    return {"url": url, "headers": _headers(provider, api_key, url, session_id), "body": body, "kind": "openai", "model_key": model_key, "reasoning": built}
 
 
 # --------------------------------------------------------------------------- 响应解析
@@ -703,8 +773,12 @@ async def chat_stream(
     prompt: dict[str, Any],
     api_key: str,
     reasoning_level: str | None = None,
+    session_id: str | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
-    """流式聊天。事件：start / delta / thinking / usage / fallback / error。"""
+    """流式聊天。事件：start / delta / thinking / usage / fallback / error。
+
+    session_id 在同一次对话的重试里保持不变（OpenCode 的 x-opencode-session）。
+    """
     proto = protocol_of(provider)
     level = reasoning_level if reasoning_level is not None else default_level(model)
     built = build_reasoning_params(model, level, proto)
@@ -730,6 +804,7 @@ async def chat_stream(
             disable_reasoning=disable_reasoning,
             reasoning_level=level,
             drop_sampling=drop_sampling,
+            session_id=session_id,
         )
         started = time.monotonic()
         try:
@@ -786,6 +861,7 @@ async def complete(
     prompt: dict[str, Any],
     api_key: str,
     reasoning_level: str | None = None,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     if mock_enabled():
         last_user = ""
@@ -798,7 +874,9 @@ async def complete(
         text, _thinking = _mock_reply(prompt)
         return {"text": text, "usage": None, "thinking": ""}
 
-    req = build_request(provider, model, prompt, api_key, stream=False, reasoning_level=reasoning_level)
+    req = build_request(
+        provider, model, prompt, api_key, stream=False, reasoning_level=reasoning_level, session_id=session_id
+    )
     timeout = _provider_timeout(provider)
     async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=min(10.0, timeout))) as client:
         resp = await client.post(req["url"], headers=req["headers"], json=req["body"])
@@ -880,7 +958,7 @@ async def test_connection(provider: dict[str, Any], api_key: str) -> dict[str, A
     started = time.monotonic()
     try:
         async with httpx.AsyncClient(timeout=TEST_TIMEOUT) as client:
-            resp = await client.get(url, headers=_headers(provider, api_key))
+            resp = await client.get(url, headers=_headers(provider, api_key, url, OPENCODE_SESSION_TEST))
         ms = int((time.monotonic() - started) * 1000)
         if resp.status_code >= 400:
             payload = _error_payload(resp.status_code, None, resp.text[:500], url)
@@ -900,7 +978,7 @@ async def pull_models(provider: dict[str, Any], api_key: str) -> dict[str, Any]:
         return {"ok": True, "ids": list(MOCK_PULL.get(proto, MOCK_PULL["openai"])), "url": redact_url(url), "status": 200, "demo": True}
     try:
         async with httpx.AsyncClient(timeout=TEST_TIMEOUT) as client:
-            resp = await client.get(url, headers=_headers(provider, api_key))
+            resp = await client.get(url, headers=_headers(provider, api_key, url, OPENCODE_SESSION_MODELS))
         if resp.status_code >= 400:
             payload = _error_payload(resp.status_code, None, resp.text[:500], url)
             payload["ids"] = []
@@ -972,7 +1050,7 @@ async def probe_models(provider: dict[str, Any], api_key: str) -> dict[str, Any]
     for url in candidates:
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(TEST_TIMEOUT, connect=5.0)) as client:
-                resp = await client.get(url, headers=_headers(provider, api_key))
+                resp = await client.get(url, headers=_headers(provider, api_key, url, OPENCODE_SESSION_MODELS))
         except Exception as exc:  # noqa: BLE001
             info = classify_api_error(None, exc, detail=redact_url(url))
             last = {"ok": False, **info, "ids": [], "url": redact_url(url), "status": 0, "ms": int((time.monotonic() - started) * 1000)}
@@ -1041,7 +1119,9 @@ async def test_generation(
     error_payload: dict[str, Any] | None = None
     try:
         async with asyncio.timeout(25):
-            async for event in chat_stream(provider, model, MINIMAL_PROMPT, api_key, level):
+            async for event in chat_stream(
+                provider, model, MINIMAL_PROMPT, api_key, level, session_id=OPENCODE_SESSION_TEST
+            ):
                 etype = event.get("type")
                 if etype == "start":
                     stream_supported = True
@@ -1115,7 +1195,7 @@ async def query_balance(provider: dict[str, Any], api_key: str) -> dict[str, Any
         return {"supported": True, "amount": amount, "currency": currency, "at": time.strftime("%m月%d日 %H:%M"), "ok": True, "url": redact_url(url)}
     try:
         async with httpx.AsyncClient(timeout=TEST_TIMEOUT) as client:
-            resp = await client.get(url, headers=_headers(provider, api_key))
+            resp = await client.get(url, headers=_headers(provider, api_key, url, OPENCODE_SESSION_BALANCE))
         if resp.status_code >= 400:
             error = classify_api_error(resp.status_code, detail=resp.text[:300])
             return {
