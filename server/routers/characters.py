@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
@@ -46,6 +47,33 @@ def _unique_book_name(conn, base: str) -> str:
     return name
 
 
+def _book_fingerprint(entries: list[dict[str, Any]]) -> str:
+    """世界书内容指纹：只按条目内容算，不看 id 和数据库顺序。
+
+    用来回答「这本书是不是已经有一本一模一样的了」——
+    同一张角色卡导入两次，不该多出一本副本。
+    """
+    parts: list[str] = []
+    for entry in entries:
+        title = str(entry.get("title") or "").strip()
+        content = str(entry.get("content") or "").strip()
+        keys = ",".join(sorted(str(k).strip() for k in (entry.get("keys") or []) if str(k).strip()))
+        constant = "1" if entry.get("constant") else "0"
+        order = str(entry.get("order") or 0)
+        parts.append("\x1f".join((title, content, keys, constant, order)))
+    parts.sort()
+    return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def _book_by_content(conn, fingerprint: str) -> dict[str, Any] | None:
+    """在现有世界书里找内容完全一致的一本。"""
+    for row in conn.execute("SELECT * FROM world_books ORDER BY created_at ASC").fetchall():
+        book = db.book_json(conn, row)
+        if _book_fingerprint(book.get("entries") or []) == fingerprint:
+            return book
+    return None
+
+
 def _materialize_book(conn, card: dict[str, Any]) -> dict[str, Any] | None:
     book_raw = card.get("character_book")
     if not isinstance(book_raw, dict):
@@ -53,13 +81,24 @@ def _materialize_book(conn, card: dict[str, Any]) -> dict[str, Any] | None:
     entries = cards.convert_book_entries(book_raw.get("entries"))
     if not entries:
         return None
+
+    # 已有内容完全一样的书就复用：避免同一张卡导入两次多出「XX（2）」「XX（3）」
+    existing = _book_by_content(conn, _book_fingerprint(entries))
+    if existing:
+        return {
+            "id": existing["id"],
+            "name": existing["name"],
+            "entryCount": len(existing.get("entries") or []),
+            "reused": True,
+        }
+
     for entry in entries:
         entry["id"] = db.new_id("e")
         entry["extras"] = {}
     base_name = str(book_raw.get("name") or book_raw.get("title") or (card.get("name", "") + " · 世界书"))
     book = {"id": db.new_id("wb"), "name": _unique_book_name(conn, base_name), "entries": entries}
     db._upsert_book(conn, book, db.now_iso())
-    return {"id": book["id"], "name": book["name"], "entryCount": len(entries)}
+    return {"id": book["id"], "name": book["name"], "entryCount": len(entries), "reused": False}
 
 
 @router.get("")
@@ -128,7 +167,10 @@ async def import_character(
     db._upsert_character(conn, item, db.now_iso())
     note = "已导入「" + name + "」。"
     if book:
-        note = "已导入「" + name + "」，并带入一本世界书。"
+        if book.get("reused"):
+            note = "已导入「" + name + "」，世界书「" + book["name"] + "」内容相同，已直接复用。"
+        else:
+            note = "已导入「" + name + "」，并带入一本世界书。"
     return {"ok": True, "character": db.get_character(conn, item["id"]), "book": book, "mode": "new", "note": note}
 
 
