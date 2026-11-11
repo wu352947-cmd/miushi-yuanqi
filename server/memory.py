@@ -40,6 +40,28 @@ def _dedupe_key(title: str, body: str) -> str:
     return _normalize_text(title) + "|" + _normalize_text(body)[:200]
 
 
+def _visible(character_id: str, persona_id: str) -> tuple[str, list[Any]]:
+    """一段关系能看见哪些记忆：世界层 + 这个角色自身 + 这一对。
+
+    两个参数都为空时返回空条件（管理视角，不做过滤）。
+    """
+    if not character_id and not persona_id:
+        return "", []
+    conds = ["scope = 'world'"]
+    params: list[Any] = []
+    if character_id:
+        if persona_id:
+            conds.append("(scope = 'character' AND character_id = ?)")
+            params.append(character_id)
+            conds.append("(scope = 'pair' AND character_id = ? AND persona_id = ?)")
+            params.extend([character_id, persona_id])
+        else:
+            # 只给了角色：看这个角色的全部关系
+            conds.append("(scope IN ('character', 'pair') AND character_id = ?)")
+            params.append(character_id)
+    return "(" + " OR ".join(conds) + ")", params
+
+
 def _similar(a: str, b: str) -> bool:
     a, b = _normalize_text(a), _normalize_text(b)
     if not a or not b:
@@ -62,9 +84,19 @@ def list_memories(
     category: str = "",
     include_forgotten: bool = True,
     kind: str = "note",
+    character_id: str = "",
+    persona_id: str = "",
+    scope: str = "",
 ) -> list[dict[str, Any]]:
     sql = "SELECT * FROM memories WHERE kind = ?"
     params: list[Any] = [kind]
+    clause, cparams = _visible(character_id, persona_id)
+    if clause:
+        sql += " AND " + clause
+        params.extend(cparams)
+    if scope:
+        sql += " AND scope = ?"
+        params.append(scope)
     if category and category != "全部":
         sql += " AND category = ?"
         params.append(category)
@@ -92,7 +124,12 @@ def create_memory(conn, payload: dict[str, Any], dedupe: bool = False) -> dict[s
     category = str(payload.get("category") or payload.get("cat") or DEFAULT_CATEGORY)
     if category not in CATEGORIES:
         category = DEFAULT_CATEGORY
-    if dedupe and _find_duplicate(conn, title, body):
+    scope = str(payload.get("scope") or "pair")
+    if scope not in ("world", "character", "pair"):
+        scope = "pair"
+    character_id = str(payload.get("characterId") or payload.get("character_id") or "")
+    persona_id = str(payload.get("personaId") or payload.get("persona_id") or "")
+    if dedupe and _find_duplicate(conn, title, body, character_id, persona_id):
         return None
     memory_id = db.new_id("mem")
     status = "pinned" if payload.get("pinned") else "normal"
@@ -100,8 +137,8 @@ def create_memory(conn, payload: dict[str, Any], dedupe: bool = False) -> dict[s
         status = "forgotten"
     now = _now()
     conn.execute(
-        "INSERT INTO memories (id, kind, category, title, body, importance, tags_json, source, source_chat_id, status, protected, created_at, updated_at) "
-        "VALUES (?, 'note', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO memories (id, kind, category, title, body, importance, tags_json, source, source_chat_id, status, protected, scope, character_id, persona_id, created_at, updated_at) "
+        "VALUES (?, 'note', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             memory_id,
             category,
@@ -113,6 +150,9 @@ def create_memory(conn, payload: dict[str, Any], dedupe: bool = False) -> dict[s
             str(payload.get("sourceChatId") or ""),
             status,
             db._bool(payload.get("protected")),
+            scope,
+            character_id,
+            persona_id,
             now,
             now,
         ),
@@ -120,11 +160,30 @@ def create_memory(conn, payload: dict[str, Any], dedupe: bool = False) -> dict[s
     return get_memory(conn, memory_id)
 
 
-def _find_duplicate(conn, title: str, body: str) -> bool:
-    for row in conn.execute("SELECT title, body FROM memories WHERE kind = 'note' AND status != 'forgotten'").fetchall():
+def _find_duplicate(conn, title: str, body: str, character_id: str = "", persona_id: str = "") -> bool:
+    sql = "SELECT title, body FROM memories WHERE kind = 'note' AND status != 'forgotten'"
+    params: list[Any] = []
+    clause, cparams = _visible(character_id, persona_id)
+    if clause:
+        # 去重比显示更宽松：没归属的孤儿记忆也算「已经有了」，
+        # 否则用户手动记下的、没选关系的那条会被自动抽取重复记一遍。
+        sql += " AND (" + clause + " OR (character_id = '' AND persona_id = ''))"
+        params.extend(cparams)
+    for row in conn.execute(sql, params).fetchall():
         if _similar(title, row["title"]) and _similar(body, row["body"]):
             return True
     return False
+
+
+def _existing_titles(conn, character_id: str = "", persona_id: str = "") -> list[str]:
+    """抽取时用来判重的已有标题：这段关系的 + 没有归属的孤儿，宁可少记也不重复。"""
+    sql = "SELECT title FROM memories WHERE kind = 'note' AND status != 'forgotten'"
+    params: list[Any] = []
+    clause, cparams = _visible(character_id, persona_id)
+    if clause:
+        sql += " AND (" + clause + " OR (character_id = '' AND persona_id = ''))"
+        params.extend(cparams)
+    return [r["title"] for r in conn.execute(sql, params).fetchall()]
 
 
 def update_memory(conn, memory_id: str, patch: dict[str, Any]) -> dict[str, Any] | None:
@@ -168,36 +227,53 @@ def set_status(conn, memory_id: str, status: str) -> dict[str, Any] | None:
     return get_memory(conn, memory_id)
 
 
-def now_card(conn) -> dict[str, Any]:
-    row = db.get_now_row(conn)
+def now_card(conn, character_id: str = "", persona_id: str = "") -> dict[str, Any]:
+    row = db.get_now_row(conn, character_id, persona_id)
     if not row:
         return {"id": "now-card", "body": "", "updatedAt": ""}
     return {"id": row["id"], "body": row["body"], "updatedAt": row["updated_at"]}
 
 
-def set_now(conn, body: str) -> dict[str, Any]:
+def set_now(conn, body: str, character_id: str = "", persona_id: str = "") -> dict[str, Any]:
     body = (body or "").strip()
-    row = db.get_now_row(conn)
     now = _now()
+    row = None
+    if character_id:
+        row = conn.execute(
+            "SELECT * FROM memories WHERE kind = 'now' AND character_id = ? AND persona_id = ? "
+            "ORDER BY updated_at DESC LIMIT 1",
+            (character_id, persona_id),
+        ).fetchone()
+    else:
+        row = db.get_now_row(conn)
     if row:
         conn.execute("UPDATE memories SET body = ?, updated_at = ? WHERE id = ?", (body, now, row["id"]))
         memory_id = row["id"]
     else:
-        memory_id = "now-card"
+        memory_id = db.new_id("now") if character_id else "now-card"
         conn.execute(
-            "INSERT INTO memories (id, kind, category, title, body, importance, tags_json, source, source_chat_id, status, protected, created_at, updated_at) "
-            "VALUES (?, 'now', '此刻', '现在卡', ?, 5, '[]', '手动', '', 'normal', 0, ?, ?)",
-            (memory_id, body, now, now),
+            "INSERT INTO memories (id, kind, category, title, body, importance, tags_json, source, source_chat_id, status, protected, scope, character_id, persona_id, created_at, updated_at) "
+            "VALUES (?, 'now', '此刻', '现在卡', ?, 5, '[]', '手动', '', 'normal', 0, 'pair', ?, ?, ?, ?)",
+            (memory_id, body, character_id, persona_id, now, now),
         )
     return {"id": memory_id, "body": body, "updatedAt": now}
 
 
-def pinned_for_prompt(conn, limit: int = 10) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        "SELECT * FROM memories WHERE kind = 'note' AND status != 'forgotten' "
-        "ORDER BY CASE status WHEN 'pinned' THEN 0 ELSE 1 END, importance DESC, updated_at DESC LIMIT ?",
-        (limit,),
-    ).fetchall()
+def pinned_for_prompt(
+    conn, limit: int = 10, character_id: str = "", persona_id: str = ""
+) -> list[dict[str, Any]]:
+    sql = "SELECT * FROM memories WHERE kind = 'note' AND status != 'forgotten'"
+    params: list[Any] = []
+    clause, cparams = _visible(character_id, persona_id)
+    if clause:
+        sql += " AND " + clause
+        params.extend(cparams)
+    sql += (
+        " ORDER BY CASE status WHEN 'pinned' THEN 0 ELSE 1 END, "
+        "importance DESC, updated_at DESC LIMIT ?"
+    )
+    params.append(limit)
+    rows = conn.execute(sql, params).fetchall()
     return [db.memory_json(r) for r in rows]
 
 
@@ -221,6 +297,9 @@ def remember_text(
     importance: int = 7,
     source: str = "手动",
     source_chat_id: str = "",
+    character_id: str = "",
+    persona_id: str = "",
+    scope: str = "pair",
 ) -> dict[str, Any] | None:
     body = (text or "").strip()
     if not body:
@@ -237,6 +316,9 @@ def remember_text(
             "tags": ["手动记住"],
             "source": source,
             "sourceChatId": source_chat_id,
+            "scope": scope,
+            "characterId": character_id,
+            "personaId": persona_id,
         },
         dedupe=True,
     )
@@ -246,15 +328,20 @@ def remember_text(
 EXTRACT_SYSTEM = (
     "你是记忆整理器 MEMORY_EXTRACT。读下面最近的一段对话，抽取值得长期记住的内容。\n"
     "只输出一个 JSON 对象，不要解释，不要 Markdown：\n"
-    '{"notes":[{"title":"不超过20字","body":"一到两句，第三人称","category":"关于我|我们|喜好|日常|约定","importance":1-10,"tags":["标签"]}],"now":"用一句话更新此刻，没有就留空"}\n'
-    "规则：只抽新的、具体的事；不要复述常识；没有值得记的就返回空的 notes。"
+    '{"notes":[{"title":"不超过20字","body":"一到两句，第三人称","category":"关于我|我们|喜好|日常|约定","importance":1-10,"tags":["标签"],"scope":"pair|character|world"}],"now":"用一句话更新此刻，没有就留空"}\n'
+    "规则：只抽新的、具体的事；不要复述常识；没有值得记的就返回空的 notes。\n"
+    "scope 判定：关于用户的事写 pair；关于角色她自己的事写 character；与具体人无关的客观事实写 world。默认 pair。"
 )
 
 
-def _build_extract_prompt(conn, character: dict[str, Any], chat: dict[str, Any]) -> str:
+def _build_extract_prompt(
+    conn, character: dict[str, Any], chat: dict[str, Any], persona_id: str = ""
+) -> str:
     persona = prompts.resolve_persona(chat, character, _all_personas(conn))[0]
-    now = now_card(conn)
-    existing = [m["title"] for m in list_memories(conn, include_forgotten=False, kind="note")[:30]]
+    persona_id = persona_id or (persona or {}).get("id") or ""
+    cid = character.get("id") or ""
+    now = now_card(conn, cid, persona_id)
+    existing = _existing_titles(conn, cid, persona_id)[:30]
     messages = (chat.get("messages") or [])[-14:]
     lines = []
     for msg in messages:
@@ -304,7 +391,9 @@ def _resolve_model(conn) -> tuple[dict | None, dict | None, str]:
     return model, provider, api_key
 
 
-async def extract_memories(character_id: str, manual: bool = False) -> dict[str, Any]:
+async def extract_memories(
+    character_id: str, persona_id: str = "", manual: bool = False
+) -> dict[str, Any]:
     """用当前模型抽一轮新记忆。失败只返回错误信息，不影响聊天。"""
     with db.get_db() as conn:
         character = db.get_character(conn, character_id)
@@ -319,10 +408,17 @@ async def extract_memories(character_id: str, manual: bool = False) -> dict[str,
         if not api_key and not providers.mock_enabled():
             return {"ok": False, "message": "先到「模型与提供商」里填写 API Key。", "created": []}
         system_prompt = EXTRACT_SYSTEM
-        user_text = "[MEMORY_EXTRACT]\n" + _build_extract_prompt(conn, character, chat)
+        persona_id = (
+            persona_id
+            or chat.get("personaId")
+            or (prompts.resolve_persona(chat, character, _all_personas(conn))[0] or {}).get("id")
+            or ""
+        )
+        cid = character.get("id") or character_id
+        user_text = "[MEMORY_EXTRACT]\n" + _build_extract_prompt(conn, character, chat, persona_id)
         chat_id = chat["id"]
         character_name = character.get("name") or ""
-        existing_titles = [m["title"] for m in list_memories(conn, include_forgotten=False, kind="note")]
+        existing_titles = _existing_titles(conn, cid, persona_id)
 
     prompt = {
         "segments": [
@@ -368,6 +464,9 @@ async def extract_memories(character_id: str, manual: bool = False) -> dict[str,
                     "tags": note.get("tags") or ["自动抽取"],
                     "source": ("手动整理 · " if manual else "自动抽取 · ") + character_name,
                     "sourceChatId": chat_id,
+                    "scope": str(note.get("scope") or "pair"),
+                    "characterId": cid,
+                    "personaId": persona_id,
                 },
                 dedupe=True,
             )
@@ -378,9 +477,9 @@ async def extract_memories(character_id: str, manual: bool = False) -> dict[str,
                 skipped += 1
         now_updated = False
         if now_text and len(now_text) <= 400:
-            current = now_card(conn)
+            current = now_card(conn, cid, persona_id)
             if not _similar(current.get("body") or "", now_text):
-                set_now(conn, now_text)
+                set_now(conn, now_text, cid, persona_id)
                 now_updated = True
         # 记录一条 usage（抽取本身也消耗 token）；拿不到 usage 时按字数估算
         usage = result.get("usage") or {
@@ -415,7 +514,7 @@ def _config_value(conn, key: str, default: Any = None) -> Any:
     return db.load_app_settings(conn).get("settings", {}).get(key, default)
 
 
-def schedule_extract_after_reply(character_id: str) -> None:
+def schedule_extract_after_reply(character_id: str, persona_id: str = "") -> None:
     """每聊 N 轮自动抽取一次；写入标记避免重复抽同一轮。"""
     try:
         with db.get_db() as conn:
@@ -440,7 +539,7 @@ def schedule_extract_after_reply(character_id: str) -> None:
 
     async def _run() -> None:
         try:
-            await extract_memories(character_id)
+            await extract_memories(character_id, persona_id)
         except Exception:  # noqa: BLE001 - 抽取失败不能影响聊天
             LOG.warning(
                 "后台自动记忆抽取失败（角色 %s），聊天不受影响。", character_id, exc_info=True

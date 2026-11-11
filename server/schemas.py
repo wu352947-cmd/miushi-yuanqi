@@ -89,6 +89,9 @@ class MemoryIn(BaseModel):
     sourceChatId: str = ""
     pinned: bool = False
     protected: bool = False
+    scope: str = "pair"
+    characterId: str = ""
+    personaId: str = ""
 
 
 class MemoryPatch(BaseModel):
@@ -104,6 +107,8 @@ class MemoryPatch(BaseModel):
 
 class NowIn(BaseModel):
     body: str = ""
+    characterId: str = ""
+    personaId: str = ""
 
 
 class RememberIn(BaseModel):
@@ -113,11 +118,14 @@ class RememberIn(BaseModel):
     importance: int = 7
     chatId: str = ""
     characterId: str = ""
+    personaId: str = ""
+    scope: str = "pair"
     source: str = "手动"
 
 
 class ExtractIn(BaseModel):
     characterId: str = ""
+    personaId: str = ""
 
 
 class ProviderIn(BaseModel):

@@ -109,10 +109,13 @@ async def test_extract_creates_notes_and_updates_now(client, monkeypatch):
     # 真的入库了，而且来源标成「自动抽取 · 角色名」
     with db.get_db() as conn:
         rows = conn.execute(
-            "SELECT title, category, importance, source, source_chat_id FROM memories "
-            "WHERE kind = 'note' AND title IN ('怕冷', '伞放门边')"
+            "SELECT title, category, importance, source, source_chat_id, character_id, persona_id "
+            "FROM memories WHERE kind = 'note' AND title IN ('怕冷', '伞放门边')"
         ).fetchall()
-        now = memory.now_card(conn)
+        rel = conn.execute(
+            "SELECT character_id, persona_id FROM memories WHERE kind = 'note' AND title = '怕冷'"
+        ).fetchone()
+        now = memory.now_card(conn, rel["character_id"], rel["persona_id"])
     assert len(rows) == 2
     sources = {r["title"]: r["source"] for r in rows}
     assert sources["怕冷"].startswith("自动抽取")

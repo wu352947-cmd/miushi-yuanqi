@@ -91,8 +91,14 @@ def _load_context(
             "model": model,
             "messages": messages,
             "user_text": user_text,
-            "now_text": memory.now_card(conn).get("body") or "",
-            "memories": memory.pinned_for_prompt(conn),
+            "now_text": memory.now_card(
+                conn, character.get("id") or "", (persona or {}).get("id") or ""
+            ).get("body") or "",
+            "memories": memory.pinned_for_prompt(
+                conn,
+                character_id=character.get("id") or "",
+                persona_id=(persona or {}).get("id") or "",
+            ),
             "preset_source": preset_source,
             "persona_source": persona_source,
             "author_note": author_note,
@@ -807,7 +813,9 @@ async def send_message(character_id: str, payload: ChatSendIn, conn=Depends(get_
             },
         )
         if not error:
-            memory.schedule_extract_after_reply(character_id)
+            memory.schedule_extract_after_reply(
+                character_id, (ctx.get("persona") or {}).get("id") or ""
+            )
 
     return StreamingResponse(
         generator(),

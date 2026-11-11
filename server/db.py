@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - 兜底
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 # --------------------------------------------------------------------------- 路径
@@ -294,9 +294,25 @@ SCHEMA: list[str] = [
       source_chat_id TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'normal',
       protected INTEGER NOT NULL DEFAULT 0,
+      scope TEXT NOT NULL DEFAULT 'pair',
+      character_id TEXT NOT NULL DEFAULT '',
+      persona_id TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       last_used_at TEXT NOT NULL DEFAULT ''
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS bonds (
+      id TEXT PRIMARY KEY,
+      persona_id TEXT NOT NULL DEFAULT '',
+      character_id TEXT NOT NULL DEFAULT '',
+      started_at TEXT NOT NULL DEFAULT '',
+      nickname TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(persona_id, character_id)
     )
     """,
     """
@@ -331,6 +347,7 @@ SCHEMA: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_chats_char ON chats(character_id)",
     "CREATE INDEX IF NOT EXISTS idx_chats_character_lookup ON chats(character_id)",
     "CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status, updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_bonds_pair ON bonds(persona_id, character_id)",
 ]
 
 
@@ -361,6 +378,54 @@ def _migrate(conn, current: int) -> None:
         message_cols = _columns(conn, "messages")
         if "edited" not in message_cols:
             conn.execute("ALTER TABLE messages ADD COLUMN edited INTEGER NOT NULL DEFAULT 0")
+    if current < 4:
+        # v4：记忆按关系隔离（世界 / 角色 / 关系对），并引入 bonds（一段关系）
+        mem_cols = _columns(conn, "memories")
+        if "scope" not in mem_cols:
+            conn.execute("ALTER TABLE memories ADD COLUMN scope TEXT NOT NULL DEFAULT 'pair'")
+        if "character_id" not in mem_cols:
+            conn.execute("ALTER TABLE memories ADD COLUMN character_id TEXT NOT NULL DEFAULT ''")
+        if "persona_id" not in mem_cols:
+            conn.execute("ALTER TABLE memories ADD COLUMN persona_id TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memories_scope "
+            "ON memories(scope, character_id, persona_id, kind, status)"
+        )
+        # 历史记忆全部归到最早的那段关系上，避免凭空多出「无主记忆」
+        first = conn.execute(
+            "SELECT character_id, persona_id FROM chats ORDER BY created_at ASC LIMIT 1"
+        ).fetchone()
+        if first:
+            conn.execute(
+                "UPDATE memories SET character_id = ?, persona_id = ? "
+                "WHERE character_id = '' AND persona_id = '' AND kind IN ('note', 'now')",
+                (first["character_id"], first["persona_id"] or ""),
+            )
+        # 每一段已有的 (persona, character) 建一条关系
+        started = ""
+        try:
+            row = conn.execute("SELECT value FROM settings WHERE key = 'app_state'").fetchone()
+            if row:
+                cfg = jloads(row["value"], {})
+                started = str(cfg.get("startDate") or "")
+        except sqlite3.Error:
+            started = ""
+        now = now_iso()
+        seen = set()
+        for row in conn.execute("SELECT DISTINCT character_id, persona_id FROM chats").fetchall():
+            cid, pid = row["character_id"] or "", row["persona_id"] or ""
+            if not cid or (cid, pid) in seen:
+                continue
+            seen.add((cid, pid))
+            exists = conn.execute(
+                "SELECT 1 FROM bonds WHERE character_id = ? AND persona_id = ?", (cid, pid)
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO bonds (id, persona_id, character_id, started_at, nickname, note, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, '', '', ?, ?)",
+                    (new_id("bond"), pid, cid, started, now, now),
+                )
 
 
 def init_db() -> None:
@@ -551,6 +616,9 @@ def memory_json(row: sqlite3.Row) -> dict[str, Any]:
         "tags": jloads(row["tags_json"], []),
         "source": row["source"],
         "sourceChatId": row["source_chat_id"],
+        "scope": (row["scope"] if "scope" in row.keys() else "pair") or "pair",
+        "characterId": (row["character_id"] if "character_id" in row.keys() else "") or "",
+        "personaId": (row["persona_id"] if "persona_id" in row.keys() else "") or "",
         "pinned": status == "pinned",
         "protected": bool(row["protected"]),
         "forgotten": status == "forgotten",
@@ -758,10 +826,16 @@ def ensure_chat(conn, character_id: str) -> sqlite3.Row:
         return row
     config = load_app_settings(conn)
     now = now_iso()
+    # 建聊天就把「这段关系是谁」固化下来：否则 persona 靠运行时解析，
+    # 一旦默认设定变了，已经积累的记忆就会挂在另一个人名下。
+    prow = conn.execute(
+        "SELECT id FROM user_personas ORDER BY is_default DESC, created_at ASC LIMIT 1"
+    ).fetchone()
+    persona_id = prow["id"] if prow else ""
     conn.execute(
         "INSERT INTO chats (id, character_id, persona_id, world_book_id, preset_id, model_id, reasoning_level, title, last_at, created_at, updated_at) "
-        "VALUES (?, ?, '', '', '', ?, '', '', '', ?, ?)",
-        (new_id("chat"), character_id, config.get("modelId", ""), now, now),
+        "VALUES (?, ?, ?, '', '', ?, '', '', '', ?, ?)",
+        (new_id("chat"), character_id, persona_id, config.get("modelId", ""), now, now),
     )
     return get_chat_row(conn, character_id)  # type: ignore[return-value]
 
@@ -967,8 +1041,59 @@ def append_message(conn, chat_id: str, role: str, text: str, **fields: Any) -> d
 
 
 # --------------------------------------------------------------------------- 现在卡 / 记忆
-def get_now_row(conn) -> sqlite3.Row | None:
-    return conn.execute("SELECT * FROM memories WHERE kind = 'now' ORDER BY updated_at DESC LIMIT 1").fetchone()
+def get_now_row(conn, character_id: str = "", persona_id: str = "") -> sqlite3.Row | None:
+    if character_id:
+        return conn.execute(
+            "SELECT * FROM memories WHERE kind = 'now' AND character_id = ? AND persona_id = ? "
+            "ORDER BY updated_at DESC LIMIT 1",
+            (character_id, persona_id),
+        ).fetchone()
+    # 空参数只返回世界层（没有绑定关系的）那条，绝不回退到某个角色的 now
+    return conn.execute(
+        "SELECT * FROM memories WHERE kind = 'now' AND character_id = '' AND persona_id = '' "
+        "ORDER BY updated_at DESC LIMIT 1"
+    ).fetchone()
+
+
+# --------------------------------------------------------------------------- 关系（bonds）
+def bond_json(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "personaId": row["persona_id"],
+        "characterId": row["character_id"],
+        "startedAt": row["started_at"],
+        "nickname": row["nickname"],
+        "note": row["note"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+
+def get_bond_row(conn, persona_id: str, character_id: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM bonds WHERE persona_id = ? AND character_id = ?",
+        (persona_id or "", character_id or ""),
+    ).fetchone()
+
+
+def ensure_bond(conn, persona_id: str, character_id: str, started_at: str = "") -> sqlite3.Row | None:
+    """取这段关系，没有就建一条。角色为空时返回 None。"""
+    if not character_id:
+        return None
+    row = get_bond_row(conn, persona_id, character_id)
+    if row:
+        return row
+    now = now_iso()
+    conn.execute(
+        "INSERT INTO bonds (id, persona_id, character_id, started_at, nickname, note, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, '', '', ?, ?)",
+        (new_id("bond"), persona_id or "", character_id, started_at, now, now),
+    )
+    return get_bond_row(conn, persona_id, character_id)
+
+
+def list_bonds(conn) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM bonds ORDER BY updated_at DESC").fetchall()
 
 
 # --------------------------------------------------------------------------- 同步：整体状态
