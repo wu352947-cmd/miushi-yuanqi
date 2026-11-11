@@ -4552,7 +4552,23 @@
     var auto = state.settings.contextAuto !== false;
     var th = Number(state.settings.contextThreshold) || 60;
     var cmId = state.settings.compressModelId || '';
-    var models = state.models || [];
+    var all = state.models || [];
+    // 只列能调动的：没配 Key 的混进来只会让人选错
+    var models = all.filter(function (m) {
+      if (m.id === cmId) return true;
+      var pv = providerOf(m);
+      if (!pv) return false;
+      return providerHasKey(pv) || serverInfo.mockModel;
+    });
+    if (!cmId) {
+      // 默认 Gemini 4（用户指定）；库里有两条同名，取最后一条（OpenCode Go 那条有 Key）
+      for (var k = models.length - 1; k >= 0; k--) {
+        if (String(models[k].modelId || '').indexOf('gemini-4') === 0) {
+          cmId = models[k].id;
+          break;
+        }
+      }
+    }
     var cm = null;
     for (var i = 0; i < models.length; i++) {
       if (models[i].id === cmId) { cm = models[i]; break; }
@@ -4589,7 +4605,7 @@
         body += '<button class="picker-row' + (on ? ' is-on' : '') + '" type="button" ' +
           'data-a2="ctx-set-model" data-value="' + esc(m.id) + '">' +
           '<span class="picker-row__name">' + esc(m.name) + '</span>' +
-          '<span class="picker-row__meta">' + (m.context ? fmtTokens(m.context) : '—') + '</span>' +
+          '<span class="picker-row__meta">' + (m.context ? fmtTokens(m.context) : '') + '</span>' +
           (on ? '<span class="picker-row__check">✓</span>' : '') + '</button>';
       });
       body += '</div>';
