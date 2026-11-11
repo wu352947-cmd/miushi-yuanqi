@@ -4486,6 +4486,100 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
 }
 .error-card__close:hover { opacity: 1; }
 
+
+/* ---------- 思考档位：滑轨版 (reason-slider-v1) ---------- */
+
+/* 输入框右侧的灯泡：颜色和亮度表示档位，不再显示文字 */
+.composer__think svg {
+  width: 17px;
+  height: 17px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: opacity .2s ease;
+}
+.composer__think[data-level="off"] { opacity: .4; }
+.composer__think[data-level="auto"] { opacity: .6; }
+.composer__think[data-level="minimal"] { opacity: .68; }
+.composer__think[data-level="low"] { opacity: .76; }
+.composer__think[data-level="medium"] { opacity: .9; }
+.composer__think[data-level="high"],
+.composer__think[data-level="xhigh"],
+.composer__think[data-level="max"] { opacity: 1; }
+.composer__think.is-off { opacity: .35; }
+
+/* 面板：灯泡 + 档位名，一行，别用 38px 霸屏 */
+.reason-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 12px 2px 6px;
+}
+.reason-hero .reason-bulb {
+  width: 44px;
+  height: 44px;
+  flex: none;
+}
+.reason-hero .reason-current {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 25px;
+  font-weight: 400;
+  letter-spacing: .07em;
+  line-height: 1.1;
+}
+
+/* 滑轨 */
+.reason-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 28px;
+  margin: 10px 0 2px;
+  background: transparent;
+  touch-action: pan-y;
+}
+.reason-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(var(--tint-rgb), .62), rgba(var(--tint-rgb), .16));
+}
+.reason-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -8px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(var(--tint-rgb), .5);
+  box-shadow: 0 2px 8px rgba(var(--tint-rgb), .32);
+}
+.reason-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(var(--tint-rgb), .3);
+}
+.reason-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(var(--tint-rgb), .5);
+}
+
+/* 刻度标签 */
+.reason-scale {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 2px 0;
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: .03em;
+  color: var(--text-3);
+}
+
 /* ===== features/chat-history.css ===== */
 /* ===== 第三块：聊天记录管理（对话列表 / 最近的聊天 / 搜索 / 改名 / 人设三层 / 导入导出） ===== */
 
@@ -4948,8 +5042,8 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
               <div class="composer__field">
                 <textarea class="composer__input" id="chatInput" rows="1" placeholder="和缪诗说点什么…" aria-label="输入消息" autocomplete="off"></textarea>
               </div>
-              <button class="round-btn composer__think" id="thinkCap" type="button" data-open="reasoning" aria-haspopup="dialog" aria-pressed="true" aria-label="思考深度：高">
-                <span class="cap__level" id="thinkCapLevel">高</span>
+              <button class="round-btn composer__think" id="thinkCap" type="button" data-open="reasoning" aria-haspopup="dialog" aria-pressed="true" aria-label="思考深度">
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.8a4.4 4.4 0 0 1 2.6 8c-.4.3-.6.7-.6 1.2v.6H8v-.6c0-.5-.2-.9-.6-1.2A4.4 4.4 0 0 1 10 2.8z"/><path d="M8.2 14.8h3.6M8.8 17h2.4"/></svg>
               </button>
               <button class="round-btn composer__send" id="sendBtn" type="button" aria-label="发送">
                 <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3.4 10 16.4 4.6 13 16.2l-3.4-4.2-6.2-2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="m9.6 12 6.8-7.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
@@ -14396,6 +14490,12 @@ const DATA = {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); }
     });
     $('#chatInput').addEventListener('input', function () { growChatInput(false); });
+    document.addEventListener('input', function (e) {
+      if (e.target && e.target.id === 'reasonRange') onReasonSlide(e.target);
+    });
+    document.addEventListener('change', function (e) {
+      if (e.target && e.target.id === 'reasonRange') onReasonCommit(e.target);
+    });
 
     $('#memorySearch').addEventListener('input', function (e) {
       memoryQuery = e.target.value.trim();
@@ -14722,8 +14822,8 @@ const DATA = {
     cap.classList.toggle('is-on', supported && level !== 'off');
     cap.setAttribute('aria-pressed', String(supported && level !== 'off'));
     cap.setAttribute('aria-label', supported ? ('思考深度：' + (REASON_TEXT[level] || '关')) : '这个模型不能调思考深度');
-    var lab = document.getElementById('thinkCapLevel');
-    if (lab) lab.textContent = supported ? (REASON_SHORT[level] || '关') : '—';
+    // 档位用灯泡亮度表达，不占文字位置
+    cap.setAttribute('data-level', supported ? level : 'off');
   }
   function thinkFoldHTML(t) {
     if (!t) return '';
@@ -14856,43 +14956,49 @@ const DATA = {
     var levels = reasoningLevels(m);
     var supported = levels.length > 0;
     var cur = chatReasoningLevel();
-    var body = '<div class="reason-head"><div class="reason-head__main">' +
-        '<p class="label">当前档位</p>' +
-        '<p class="reason-current">' + (supported ? esc(REASON_TEXT[cur] || '关') : '不可调') + '</p>' +
-        '<p class="reason-desc">并非所有模型都支持深度调整。这里改的只影响这场聊天。</p>' +
-      '</div><span class="reason-bulb' + (supported ? '' : ' is-off') + '">' + IC_BULB + '</span></div>';
     if (!supported) {
-      body += '<div class="test-state is-fail"><span class="test-state__dot"></span><span>这个模型不能调思考深度，请求里不会带任何思考参数。</span></div>' +
+      var gone = '<p class="reason-desc">这个模型不能调思考深度，请求里不会带任何思考参数。</p>' +
         '<p class="a2-note">换一个支持思考的模型，或者去「模型与提供商」里给这个模型改「思考方式」。</p>';
-      return { title: '调整思考深度', body: body, foot: '<button class="btn" type="button" data-close>知道了</button>' };
+      return { title: '思考深度', body: gone, foot: '<button class="btn" type="button" data-close>知道了</button>' };
     }
-    body += '<div class="seg-slider" role="group" aria-label="思考档位">' +
-      levels.map(function (lv) {
-        return '<button class="seg-slider__btn' + (lv === cur ? ' is-on' : '') + '" type="button" data-a2="reason-level" data-value="' + esc(lv) + '" aria-pressed="' + (lv === cur ? 'true' : 'false') + '">' + esc(REASON_TEXT[lv]) + '</button>';
-      }).join('') + '</div>';
-    body += '<div class="reason-ticks"><span>更省</span><span>更稳</span><span>更深</span></div>';
-    body += '<div class="reason-meta"><span class="a2-tag">' + esc(m.name) + '</span>' +
-      '<span class="a2-tag">' + esc(reasonModeLabel(m.reasoning.mode)) + '</span>' +
-      '<span class="a2-tag a2-tag--muted">默认 ' + esc(REASON_TEXT[reasoningDefaultLevel(m)] || '关') + '</span></div>';
-    body += '<p class="sheet-label">这次请求里会带</p><div class="reason-params">' + esc(reasoningParamsPreview(m, cur)) + '</div>';
-    body += '<p class="a2-note">' + esc((m.reasoning && m.reasoning.note) || '') + '</p>';
-    if (reasonPending) {
-      var same = reasonPending === reasoningDefaultLevel(m);
-      body += '<div class="ask-card" style="margin-top:12px">' +
-        '<p class="ask-card__text">' + (same
-          ? '「' + esc(REASON_TEXT[reasonPending]) + '」已经是「' + esc(m.name) + '」的默认档位了。'
-          : '「' + esc(REASON_TEXT[reasonPending]) + '」只改这场聊天，还是同时设为「' + esc(m.name) + '」的默认？') + '</p>' +
-        '<div class="ask-actions">' +
-          '<button class="btn btn--soft" type="button" data-a2="reason-dismiss">只改这场</button>' +
-          '<button class="btn btn--primary" type="button" data-a2="reason-default">同时设为默认</button>' +
-        '</div></div>';
-    }
+    var idx = Math.max(0, levels.indexOf(cur));
+    var body = '<p class="reason-desc">并非所有模型都支持深度调整。这里改的只影响这场聊天。</p>';
+    body += '<div class="reason-hero">' +
+      '<span class="reason-bulb' + (cur === 'off' ? ' is-off' : '') + '">' + IC_BULB + '</span>' +
+      '<p class="reason-current" id="reasonCurrent">' + esc(REASON_TEXT[cur] || cur) + '</p>' +
+    '</div>';
+    body += '<input type="range" class="reason-range" id="reasonRange" min="0" max="' +
+      (levels.length - 1) + '" step="1" value="' + idx + '" aria-label="思考深度">';
+    body += '<div class="reason-scale">' +
+      levels.map(function (lv) { return '<span>' + esc(REASON_TEXT[lv] || lv) + '</span>'; }).join('') +
+    '</div>';
     return {
-      title: '调整思考深度',
+      title: '思考深度',
       body: body,
       foot: '<button class="btn" type="button" data-close>完成</button>'
     };
   };
+  /* 拖动时只更新显示，松手才落库——滑轨不能一边拖一边重绘 */
+  function onReasonSlide(el) {
+    var levels = reasoningLevels(currentModel());
+    var lv = levels[Number(el.value)];
+    if (!lv) return;
+    var cur = document.getElementById('reasonCurrent');
+    if (cur) cur.textContent = REASON_TEXT[lv] || lv;
+    var bulb = document.querySelector('#sheetLayer .reason-bulb');
+    if (bulb) bulb.classList.toggle('is-off', lv === 'off');
+  }
+  function onReasonCommit(el) {
+    var levels = reasoningLevels(currentModel());
+    var lv = levels[Number(el.value)];
+    if (!lv) return;
+    var chat = ensureChat(state.currentCharacterId);
+    if (!chat) return;
+    chat.reasoningLevel = lv;
+    save();
+    updateThinkCap();
+    toast('思考深度：' + (REASON_TEXT[lv] || lv));
+  }
   function selectReasoningLevel(level) {
     var m = currentModel();
     if (!reasoningSupported(m)) return;

@@ -3848,6 +3848,12 @@
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); }
     });
     $('#chatInput').addEventListener('input', function () { growChatInput(false); });
+    document.addEventListener('input', function (e) {
+      if (e.target && e.target.id === 'reasonRange') onReasonSlide(e.target);
+    });
+    document.addEventListener('change', function (e) {
+      if (e.target && e.target.id === 'reasonRange') onReasonCommit(e.target);
+    });
 
     $('#memorySearch').addEventListener('input', function (e) {
       memoryQuery = e.target.value.trim();
@@ -4174,8 +4180,8 @@
     cap.classList.toggle('is-on', supported && level !== 'off');
     cap.setAttribute('aria-pressed', String(supported && level !== 'off'));
     cap.setAttribute('aria-label', supported ? ('思考深度：' + (REASON_TEXT[level] || '关')) : '这个模型不能调思考深度');
-    var lab = document.getElementById('thinkCapLevel');
-    if (lab) lab.textContent = supported ? (REASON_SHORT[level] || '关') : '—';
+    // 档位用灯泡亮度表达，不占文字位置
+    cap.setAttribute('data-level', supported ? level : 'off');
   }
   function thinkFoldHTML(t) {
     if (!t) return '';
@@ -4308,43 +4314,49 @@
     var levels = reasoningLevels(m);
     var supported = levels.length > 0;
     var cur = chatReasoningLevel();
-    var body = '<div class="reason-head"><div class="reason-head__main">' +
-        '<p class="label">当前档位</p>' +
-        '<p class="reason-current">' + (supported ? esc(REASON_TEXT[cur] || '关') : '不可调') + '</p>' +
-        '<p class="reason-desc">并非所有模型都支持深度调整。这里改的只影响这场聊天。</p>' +
-      '</div><span class="reason-bulb' + (supported ? '' : ' is-off') + '">' + IC_BULB + '</span></div>';
     if (!supported) {
-      body += '<div class="test-state is-fail"><span class="test-state__dot"></span><span>这个模型不能调思考深度，请求里不会带任何思考参数。</span></div>' +
+      var gone = '<p class="reason-desc">这个模型不能调思考深度，请求里不会带任何思考参数。</p>' +
         '<p class="a2-note">换一个支持思考的模型，或者去「模型与提供商」里给这个模型改「思考方式」。</p>';
-      return { title: '调整思考深度', body: body, foot: '<button class="btn" type="button" data-close>知道了</button>' };
+      return { title: '思考深度', body: gone, foot: '<button class="btn" type="button" data-close>知道了</button>' };
     }
-    body += '<div class="seg-slider" role="group" aria-label="思考档位">' +
-      levels.map(function (lv) {
-        return '<button class="seg-slider__btn' + (lv === cur ? ' is-on' : '') + '" type="button" data-a2="reason-level" data-value="' + esc(lv) + '" aria-pressed="' + (lv === cur ? 'true' : 'false') + '">' + esc(REASON_TEXT[lv]) + '</button>';
-      }).join('') + '</div>';
-    body += '<div class="reason-ticks"><span>更省</span><span>更稳</span><span>更深</span></div>';
-    body += '<div class="reason-meta"><span class="a2-tag">' + esc(m.name) + '</span>' +
-      '<span class="a2-tag">' + esc(reasonModeLabel(m.reasoning.mode)) + '</span>' +
-      '<span class="a2-tag a2-tag--muted">默认 ' + esc(REASON_TEXT[reasoningDefaultLevel(m)] || '关') + '</span></div>';
-    body += '<p class="sheet-label">这次请求里会带</p><div class="reason-params">' + esc(reasoningParamsPreview(m, cur)) + '</div>';
-    body += '<p class="a2-note">' + esc((m.reasoning && m.reasoning.note) || '') + '</p>';
-    if (reasonPending) {
-      var same = reasonPending === reasoningDefaultLevel(m);
-      body += '<div class="ask-card" style="margin-top:12px">' +
-        '<p class="ask-card__text">' + (same
-          ? '「' + esc(REASON_TEXT[reasonPending]) + '」已经是「' + esc(m.name) + '」的默认档位了。'
-          : '「' + esc(REASON_TEXT[reasonPending]) + '」只改这场聊天，还是同时设为「' + esc(m.name) + '」的默认？') + '</p>' +
-        '<div class="ask-actions">' +
-          '<button class="btn btn--soft" type="button" data-a2="reason-dismiss">只改这场</button>' +
-          '<button class="btn btn--primary" type="button" data-a2="reason-default">同时设为默认</button>' +
-        '</div></div>';
-    }
+    var idx = Math.max(0, levels.indexOf(cur));
+    var body = '<p class="reason-desc">并非所有模型都支持深度调整。这里改的只影响这场聊天。</p>';
+    body += '<div class="reason-hero">' +
+      '<span class="reason-bulb' + (cur === 'off' ? ' is-off' : '') + '">' + IC_BULB + '</span>' +
+      '<p class="reason-current" id="reasonCurrent">' + esc(REASON_TEXT[cur] || cur) + '</p>' +
+    '</div>';
+    body += '<input type="range" class="reason-range" id="reasonRange" min="0" max="' +
+      (levels.length - 1) + '" step="1" value="' + idx + '" aria-label="思考深度">';
+    body += '<div class="reason-scale">' +
+      levels.map(function (lv) { return '<span>' + esc(REASON_TEXT[lv] || lv) + '</span>'; }).join('') +
+    '</div>';
     return {
-      title: '调整思考深度',
+      title: '思考深度',
       body: body,
       foot: '<button class="btn" type="button" data-close>完成</button>'
     };
   };
+  /* 拖动时只更新显示，松手才落库——滑轨不能一边拖一边重绘 */
+  function onReasonSlide(el) {
+    var levels = reasoningLevels(currentModel());
+    var lv = levels[Number(el.value)];
+    if (!lv) return;
+    var cur = document.getElementById('reasonCurrent');
+    if (cur) cur.textContent = REASON_TEXT[lv] || lv;
+    var bulb = document.querySelector('#sheetLayer .reason-bulb');
+    if (bulb) bulb.classList.toggle('is-off', lv === 'off');
+  }
+  function onReasonCommit(el) {
+    var levels = reasoningLevels(currentModel());
+    var lv = levels[Number(el.value)];
+    if (!lv) return;
+    var chat = ensureChat(state.currentCharacterId);
+    if (!chat) return;
+    chat.reasoningLevel = lv;
+    save();
+    updateThinkCap();
+    toast('思考深度：' + (REASON_TEXT[lv] || lv));
+  }
   function selectReasoningLevel(level) {
     var m = currentModel();
     if (!reasoningSupported(m)) return;
