@@ -597,11 +597,25 @@ def prompt_preview(character_id: str, text: str = "", conn=Depends(get_conn)) ->
     }
 
 
+# 离线续写：没人说话的时候，让她自己开口。
+# 三条硬规矩来自实际讨论——不评论隔了多久、不索取回应、不替用户说话。
+PROACTIVE_NUDGE = (
+    "（现在没有人对你说话，你自己开口。\n"
+    "人称跟上面聊天记录保持一致：上面用「她」就继续用「她」，上面用「我」就继续用「我」；"
+    "如果上面只有对话、看不出叙述人称，用第三人称（她）。\n"
+    "写 2-3 段，一共 150-350 字。内容是此刻正在做的事、眼前看到的东西，或者刚冒出来的一个念头。\n"
+    "不要写「你回来了」「终于等到你」，不要提隔了多久，不要问对方去哪了，"
+    "不要表现委屈或索取回应，不要替对方说话、写对方的动作和心理。\n"
+    "可以只写自己一个人，写着写着想到对方；可以只有半句话就停；可以平平淡淡没有情绪起伏。\n"
+    "结尾不要收束，停在一个自然的动作或说到一半的话上。）"
+)
+
+
 @router.post("/{character_id}/messages")
 async def send_message(character_id: str, payload: ChatSendIn, conn=Depends(get_conn)) -> StreamingResponse:
     text = (payload.text or "").strip()
     mode = str(payload.mode or "normal").strip()
-    if mode not in ("normal", "continue", "regenerate"):
+    if mode not in ("normal", "continue", "regenerate", "proactive"):
         mode = "normal"
     target_chat_id = str(payload.chatId or "")
     if mode == "normal" and not text:
@@ -620,6 +634,9 @@ async def send_message(character_id: str, payload: ChatSendIn, conn=Depends(get_
     elif mode == "continue":
         # 续写：不写新的 user 消息，让模型接着最后一条 AI 回复继续
         user_text = "（请顺着上面最后一条继续写下去，不要重复，也不要替我说话。）"
+    elif mode == "proactive":
+        # 离线续写：同样不写 user 消息，但语义是「她主动开口」，不是「接着说」
+        user_text = PROACTIVE_NUDGE
     else:
         user_text = text
     ctx = _load_context(conn, character_id, user_text, payload.modelId, payload.reasoningLevel, chat_id=target_chat_id or None)

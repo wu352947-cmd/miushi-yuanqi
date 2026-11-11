@@ -1378,7 +1378,7 @@
     prefetchAdjacentWallpapers(view);
     if (view === 'home') startHomeClock(); else stopHomeClock();
     if (view === 'home') renderHome();
-    if (view === 'chat') scrollChatBottom(false);
+    if (view === 'chat') { scrollChatBottom(false); scheduleProactive(); }
     if (view === 'memory') { renderMemories(); refreshMemoriesQuiet(); }
     if (view === 'me') renderMe();
     if (view === 'listen') renderListen();
@@ -1692,6 +1692,67 @@
     return '先到「我的 → 模型与提供商」里填写 API Key，再发消息。';
   }
 
+  /* ---------- 离线续写：进聊天页时她自己开口 ----------
+     她主动说话这件事，最怕变成「索取」——所以限了三道：
+     ① 最后一条得是她说的（我还没回，就别催）
+     ② 距上一条至少 15 分钟（刚聊完不会又冒一句）
+     ③ 每天最多 3 次（反复开关页面不会刷屏） */
+  var PROACTIVE_MIN_GAP = 15 * 60 * 1000;
+  var PROACTIVE_MAX_PER_DAY = 3;
+  var proactiveTried = {};
+  var proactiveTimer = null;
+  function proactiveLogKey(chat) { return 'msyq.proactive.' + (chat.id || 'local'); }
+  function proactiveReadLog(chat) {
+    try { return JSON.parse(localStorage.getItem(proactiveLogKey(chat)) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function proactiveCan(chat) {
+    if (!chat || !chat.messages || chat.messages.length < 2) return false;
+    var last = chat.messages[chat.messages.length - 1];
+    if (!last || last.role !== 'ai') return false;
+    var at = Date.parse(chat.lastAt || '');
+    if (!isFinite(at)) return false;
+    if (Date.now() - at < PROACTIVE_MIN_GAP) return false;
+    var log = proactiveReadLog(chat);
+    var today = new Date().toISOString().slice(0, 10);
+    if (log.day === today && (Number(log.n) || 0) >= PROACTIVE_MAX_PER_DAY) return false;
+    return true;
+  }
+  function proactiveMark(chat) {
+    var log = proactiveReadLog(chat);
+    var today = new Date().toISOString().slice(0, 10);
+    if (log.day !== today) log = { day: today, n: 0 };
+    log.n = (Number(log.n) || 0) + 1;
+    log.at = Date.now();
+    try { localStorage.setItem(proactiveLogKey(chat), JSON.stringify(log)); } catch (e) { /* 忽略 */ }
+  }
+  function scheduleProactive() {
+    if (proactiveTimer) { clearTimeout(proactiveTimer); proactiveTimer = null; }
+    proactiveTimer = window.setTimeout(function () {
+      proactiveTimer = null;
+      tryProactive();
+    }, 700);
+  }
+  function tryProactive() {
+    if (currentView !== 'chat' || chatBusy) return;
+    if (!SERVER_MODE || !serverOnline) return;
+    var input = document.getElementById('chatInput');
+    if (input && String(input.value || '').trim()) return;  // 我正要说话，让位
+    var char = currentChar();
+    if (!char) return;
+    var chat = state.chats[char.id];
+    if (!chat) return;
+    var token = chat.id || char.id;
+    if (proactiveTried[token]) return;
+    if (!proactiveCan(chat)) return;
+    var model = currentModel();
+    if (!model) return;
+    var provider = providerOf(model);
+    if (!serverInfo.mockModel && provider && !providerHasKey(provider)) return;
+    proactiveTried[token] = true;
+    proactiveMark(chat);
+    sendChat({ mode: 'proactive' });
+  }
   function sendChat(opts) {
     opts = opts || {};
     var mode = opts.mode || 'normal';
@@ -1699,7 +1760,7 @@
     var text = opts.text !== undefined ? String(opts.text).trim() : (input ? input.value.trim() : '');
     if (mode === 'normal' && !text) { if (input) input.focus(); return; }
     if (chatBusy) return;
-    if (input) { input.value = ''; growChatInput(true); }
+    if (input && mode !== 'proactive') { input.value = ''; growChatInput(true); }
     if (mode === 'normal') appendChat({ role: 'me', text: text, time: hm(new Date()) });
 
     if (!SERVER_MODE || !serverOnline) { offlineDemoReply(); return; }

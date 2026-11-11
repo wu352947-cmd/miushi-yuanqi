@@ -130,16 +130,16 @@ def test_anthropic_usage_cache_split():
 @pytest.mark.parametrize("level,thinking", [("low", "low"), ("medium", "medium"), ("high", "high")])
 def test_gemini_level(level, thinking):
     m = model("gemini_level", ["auto", "low", "medium", "high"], "auto", modelId="gemini-4-argon")
-    params = build_reasoning_params(m, level)["params"]
+    params = build_reasoning_params(m, level, "gemini")["params"]
     assert params == {"generationConfig": {"thinkingConfig": {"thinkingLevel": thinking, "includeThoughts": True}}}
     assert "thinkingBudget" not in str(params)
 
 
 def test_gemini_off_and_no_mixed_fields():
     minimal = model("gemini_level", ["off", "auto", "low"], "auto", modelId="gemini-3.5-flash-lite", supportsMinimal=True)
-    assert build_reasoning_params(minimal, "off")["params"]["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "minimal"
+    assert build_reasoning_params(minimal, "off", "gemini")["params"]["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "minimal"
     no = model("gemini_level", ["auto", "low"], "auto", modelId="gemini-4-argon", supportsMinimal=False)
-    assert build_reasoning_params(no, "off")["supported"] is False
+    assert build_reasoning_params(no, "off", "gemini")["supported"] is False
     m = model("gemini_level", ["auto", "low", "high"], "auto", modelId="gemini-3.8-flash")
     body = req(m, "high", protocol="gemini")["body"]
     gen = body.get("generationConfig", {})

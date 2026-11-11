@@ -155,21 +155,34 @@ def build_reasoning_params(model: dict[str, Any] | None, level: str | None, prot
     if mode == "gemini_level":
         out["dropSampling"] = ["temperature", "top_p", "top_k"]
         gl = [x for x in ["low", "medium", "high"] if x in (r.get("levels") or ["low", "medium", "high"])]
+        # 原生 Gemini API 用 generationConfig.thinkingConfig；
+        # OpenAI 兼容网关（OpenCode Go 等）不认这个名字，会把整包当参数校验失败：
+        #   400 generationConfig: cannot be represented by google
+        # 这些网关只接受 reasoning_effort，所以必须按协议分流。
+        native = protocol == "gemini"
         if lv == "auto":
             out["note"] = "自动：不发 thinkingLevel，交给模型默认值"
             return out
         if lv == "off":
             if r.get("supportsMinimal"):
-                out["params"] = {"generationConfig": {"thinkingConfig": {"thinkingLevel": "minimal", "includeThoughts": True}}}
-                out["note"] = "thinkingLevel = minimal（几乎不思考）"
+                if native:
+                    out["params"] = {"generationConfig": {"thinkingConfig": {"thinkingLevel": "minimal", "includeThoughts": True}}}
+                    out["note"] = "thinkingLevel = minimal（几乎不思考）"
+                else:
+                    out["params"] = {"reasoning_effort": "minimal"}
+                    out["note"] = "reasoning_effort = minimal（几乎不思考）"
             else:
                 out["supported"] = False
                 out["params"] = None
                 out["note"] = "这个 Gemini 模型不提供关闭：minimal 会报错，只能选自动 / 低 / 中 / 高"
             return out
         lv2 = _effort(lv, gl or ["low", "medium", "high"])
-        out["params"] = {"generationConfig": {"thinkingConfig": {"thinkingLevel": lv2, "includeThoughts": True}}}
-        out["note"] = "thinkingConfig.thinkingLevel = " + lv2 + "（只发 level，不发 budget）"
+        if native:
+            out["params"] = {"generationConfig": {"thinkingConfig": {"thinkingLevel": lv2, "includeThoughts": True}}}
+            out["note"] = "thinkingConfig.thinkingLevel = " + lv2 + "（只发 level，不发 budget）"
+        else:
+            out["params"] = {"reasoning_effort": lv2}
+            out["note"] = "reasoning_effort = " + lv2 + "（OpenAI 兼容网关不认 Gemini 原生字段）"
         return out
 
     if mode == "gemini_budget":
