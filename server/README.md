@@ -1,5 +1,7 @@
 # 缪诗鸳杞 · 本机后端
 
+怎么把整个应用跑起来，见仓库根目录的 [README.md](../README.md)。本文只补充后端职责和接口。
+
 一个轻量的 **FastAPI + SQLite** 后端，给缪诗鸳杞的移动端前端用。
 
 职责只有六件事：**鉴权、存数据、拼提示词、转发流式请求、记用量、抽取记忆**。
@@ -17,8 +19,8 @@ python3 -m venv .venv
 cp server/.env.example .env
 python -c "import secrets; print(secrets.token_urlsafe(48))"   # 填到 APP_SECRET
 
-# 3. 构建前端（单文件 dist/index.html）
-node scripts/build.mjs
+# 3. 仓库已带 dist/index.html，可直接启动。改了 src/ 再构建：
+#    node scripts/build.mjs
 
 # 4. 启动（默认只监听 127.0.0.1:8080）
 .venv/bin/python -m server.app
