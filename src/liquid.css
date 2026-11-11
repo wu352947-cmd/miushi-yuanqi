@@ -2442,3 +2442,15 @@ html[data-theme] .metric-toggle { letter-spacing: .02em; }
 /* C2 · 头像 / 唱片中心的初始字用正文色，避免小字糊在浅底上 */
 html[data-theme] .avatar { color: var(--text); background: linear-gradient(160deg, rgba(255, 255, 255, .48), rgba(var(--tint-rgb), .24)); }
 html[data-theme] .record__fallback { color: var(--text); }
+
+/* 被字数上限打断时的提示：一行文字 + 一个按钮 */
+.fallback-note.truncate-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.fallback-note.truncate-note .mini-btn {
+  flex: none;
+}

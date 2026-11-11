@@ -643,6 +643,7 @@ async def send_message(character_id: str, payload: ChatSendIn, conn=Depends(get_
         started = time.monotonic()
         text_parts: list[str] = []
         thinking_parts: list[str] = []
+        finish_reason = ""
         usage: dict[str, Any] | None = None
         estimated = False
         fallback_note = ""
@@ -720,6 +721,8 @@ async def send_message(character_id: str, payload: ChatSendIn, conn=Depends(get_
                         thinking_parts.append(chunk)
                         if return_thinking:
                             yield _sse("thinking", {"text": chunk})
+                elif etype == "finish":
+                    finish_reason = str(event.get("reason") or "")
                 elif etype == "usage":
                     incoming = event.get("usage") or {}
                     if usage is None:
@@ -810,6 +813,9 @@ async def send_message(character_id: str, payload: ChatSendIn, conn=Depends(get_
                 "estimated": estimated,
                 "durationMs": duration_ms,
                 "error": error,
+                # 被 max_tokens 截断时前端要明确提示，不能当成「她说完了」
+                "truncated": finish_reason == "length",
+                "finishReason": finish_reason,
             },
         )
         if not error:

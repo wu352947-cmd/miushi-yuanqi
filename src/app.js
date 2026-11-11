@@ -1548,7 +1548,7 @@
     var typing = '<div class="msg msg--ai" id="streamMsg">' +
       avatarHTML(currentChar(), 'avatar avatar--ai msg__avatar') +
       '<div class="msg__body"><p class="msg__name"><span>' + esc(charName()) + '</span><span class="msg__time">' + hm(new Date()) + '</span></p>' +
-      '<div class="bubble bubble--ai" id="streamBubble"><span class="think-pill" aria-label="思考中">思考中<i></i><i></i><i></i></span></div>' +
+      '<div class="bubble bubble--ai" id="streamBubble"><span class="think-pill" aria-label="正在回复">' + esc(charName()) + '正在回复<i></i><i></i><i></i></span></div>' +
       '<p class="fallback-note" id="streamFallback" hidden></p>' +
       '<p class="usage" id="streamUsage" hidden></p>' +
       '</div></div>';
@@ -1610,9 +1610,24 @@
       };
       if (done && done.fallback) finalMsg.fallback = done.fallback;
     }
+    if (!String(finalMsg.text || '').trim()) {
+      // 模型一个字都没吐出来：别留个空气泡让人猜
+      if (holder) holder.remove();
+      appendErrorBubble('她这次没说出话来。可以再发一次，或者换个模型试试。');
+      toast('这次是空回复。');
+      return;
+    }
     if (holder) holder.remove();
     chatMessages.push(finalMsg);
     $('#chatList').insertAdjacentHTML('beforeend', renderMessage(finalMsg));
+    if (done && done.truncated) {
+      // 被字数上限打断：明确告诉她被打断了，并给一键续写
+      $('#chatList').insertAdjacentHTML(
+        'beforeend',
+        '<p class="fallback-note truncate-note">她被字数上限打断了，这句话还没说完。' +
+          '<button class="mini-btn" type="button" data-truncate-continue="1">让她说完</button></p>'
+      );
+    }
     scrollChatBottom(true);
     persistChat();
     if (done && done.remembered) toast('记好了：' + done.remembered.title);
@@ -1625,7 +1640,7 @@
     var typing = '<div class="msg msg--ai" id="typingMsg">' +
       avatarHTML(currentChar(), 'avatar avatar--ai msg__avatar') +
       '<div class="msg__body"><p class="msg__name"><span>' + esc(charName()) + '</span></p>' +
-      '<div class="bubble bubble--ai bubble--typing"><span class="think-pill" aria-label="思考中">思考中<i></i><i></i><i></i></span></div></div></div>';
+      '<div class="bubble bubble--ai bubble--typing"><span class="think-pill" aria-label="正在回复">' + esc(charName()) + '正在回复<i></i><i></i><i></i></span></div></div></div>';
     $('#chatList').insertAdjacentHTML('beforeend', typing);
     scrollChatBottom(true);
     if (replyTimer) clearTimeout(replyTimer);
@@ -3647,6 +3662,12 @@
     if ((hit = target.closest('[data-action]'))) { handleAction(hit.getAttribute('data-action'), hit); return; }
     if ((hit = target.closest('[data-nav]'))) { navTo(hit.getAttribute('data-nav')); return; }
     if ((hit = target.closest('[data-cap]'))) { toggleCap(hit); return; }
+    if ((hit = target.closest('[data-truncate-continue]'))) {
+      var note = hit.closest('.truncate-note');
+      if (note) note.remove();
+      sendChat({ mode: 'continue' });
+      return;
+    }
     if ((hit = target.closest('[data-bond-char]'))) {
       var bchar = hit.getAttribute('data-bond-char') || '';
       var bpersona = hit.getAttribute('data-bond-persona') || '';

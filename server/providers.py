@@ -614,6 +614,9 @@ async def _stream_openai(resp) -> AsyncIterator[dict[str, Any]]:
                 reasoning = "".join(parts)
             if reasoning:
                 yield {"type": "thinking", "text": str(reasoning)}
+            finish = choice.get("finish_reason")
+            if finish:
+                yield {"type": "finish", "reason": str(finish)}
 
 
 async def _stream_anthropic(resp) -> AsyncIterator[dict[str, Any]]:
@@ -642,6 +645,10 @@ async def _stream_anthropic(resp) -> AsyncIterator[dict[str, Any]]:
                 _merge_usage_max(merged_usage, _norm_anthropic_usage(usage))
             if merged_usage:
                 yield {"type": "usage", "usage": dict(merged_usage), "estimated": False}
+            stop = (obj.get("delta") or {}).get("stop_reason")
+            if stop:
+                # max_tokens 和 OpenAI 的 length 是同一件事，统一成一个词
+                yield {"type": "finish", "reason": "length" if stop == "max_tokens" else str(stop)}
         elif etype == "error":
             err = obj.get("error") or {}
             yield {
@@ -664,6 +671,9 @@ async def _stream_gemini(resp) -> AsyncIterator[dict[str, Any]]:
         if usage:
             yield {"type": "usage", "usage": _norm_gemini_usage(usage), "estimated": False}
         for candidate in obj.get("candidates") or []:
+            finish = candidate.get("finishReason")
+            if finish:
+                yield {"type": "finish", "reason": "length" if finish == "MAX_TOKENS" else str(finish)}
             for part in (candidate.get("content") or {}).get("parts") or []:
                 text = part.get("text")
                 if not text:
