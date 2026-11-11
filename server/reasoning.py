@@ -153,7 +153,10 @@ def build_reasoning_params(model: dict[str, Any] | None, level: str | None, prot
         return out
 
     if mode == "gemini_level":
-        out["dropSampling"] = ["temperature", "top_p", "top_k"]
+        # Gemini 没有 penalty 概念，带了会直接 400：Penalty is not enabled for this model
+        out["dropSampling"] = [
+            "temperature", "top_p", "top_k", "presence_penalty", "frequency_penalty",
+        ]
         gl = [x for x in ["low", "medium", "high"] if x in (r.get("levels") or ["low", "medium", "high"])]
         # 原生 Gemini API 用 generationConfig.thinkingConfig；
         # OpenAI 兼容网关（OpenCode Go 等）不认这个名字，会把整包当参数校验失败：

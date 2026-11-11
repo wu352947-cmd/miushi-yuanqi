@@ -51,3 +51,15 @@ def test_auto_sends_nothing_on_both_protocols():
 def test_unknown_level_falls_back_without_crashing():
     built = build_reasoning_params(_model(), "最低", "openai")
     assert built.get("params") is None or "reasoning_effort" in built["params"]
+
+
+def test_gemini_drops_penalty():
+    """Gemini 没有 penalty 概念，带了直接 400：Penalty is not enabled for this model。
+
+    预设「细腻散文」设了 presence_penalty=0.1 / frequency_penalty=0.2，
+    所以切 Gemini 必挂、切 DeepSeek 正常 —— 这是很容易漏的一对参数。
+    """
+    for level in ("auto", "low", "medium", "high"):
+        drop = build_reasoning_params(_model(), level, "openai").get("dropSampling") or []
+        assert "presence_penalty" in drop, "档位 %s 没 drop presence_penalty" % level
+        assert "frequency_penalty" in drop, "档位 %s 没 drop frequency_penalty" % level
