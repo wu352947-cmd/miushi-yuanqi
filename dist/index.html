@@ -4409,6 +4409,83 @@ html[data-theme] .record__fallback { color: var(--text); }
   flex: none;
 }
 
+
+/* ---------- 聊天页细调 v1 (chat-tweaks-v1) ---------- */
+
+/* 输入框：多行、跟着字长高、内部滚动 */
+textarea.composer__input {
+  resize: none;
+  max-height: 116px;
+  overflow-y: auto;
+  line-height: 1.45;
+  padding: 0;
+  display: block;
+}
+textarea.composer__input::-webkit-scrollbar { width: 3px; }
+
+/* 聊天页不再显示 tabbar，底部留白跟着收 */
+.app--no-tabs .composer-zone { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+
+/* 输入框右侧的思考档位（取代原来的语音按钮） */
+.composer__think {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: var(--pink-deep);
+}
+.composer__think .cap__level { font-size: 11px; line-height: 1; }
+
+/* 我的头像：和 AI 区分开 */
+.avatar--me {
+  background: linear-gradient(160deg, rgba(255, 255, 255, .92), rgba(var(--tint-rgb), .28));
+  color: var(--text-2);
+  border: 1px solid var(--glass-border);
+}
+.msg--me .msg__avatar { margin-left: 8px; }
+
+/* 报错：悬浮卡片，不占聊天记录 */
+.error-layer {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.error-card {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 13px;
+  border-radius: 16px;
+  background: rgba(255, 249, 249, .96);
+  border: 1px solid rgba(206, 120, 120, .35);
+  box-shadow: 0 10px 26px rgba(120, 60, 60, .16);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #8a4141;
+  animation: msg-in .24s var(--ease) both;
+}
+.error-card__text { flex: 1; }
+.error-card__close {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: .55;
+}
+.error-card__close:hover { opacity: 1; }
+
 /* ===== features/chat-history.css ===== */
 /* ===== 第三块：聊天记录管理（对话列表 / 最近的聊天 / 搜索 / 改名 / 人设三层 / 导入导出） ===== */
 
