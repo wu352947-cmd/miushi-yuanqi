@@ -3004,45 +3004,29 @@
     }
   }
 
-  /* 第一次碰屏幕时先把 audio 元素"解锁"：
-     放一段 0.1 秒的静音 wav，之后异步取到地址再 play 也不会被浏览器拦。 */
-  var SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-  var audioUnlocked = false;
-  function unlockAudio() {
-    if (audioUnlocked) return;
-    var a = ensureAudio();
-    audioUnlocked = true;
-    try {
-      a.src = SILENT_WAV;
-      var p = a.play();
-      if (p && p.then) p.then(function () { a.pause(); }).catch(function () {});
-    } catch (e) { /* 忽略：解锁失败就退回"点两次" */ }
-  }
-  document.addEventListener('touchstart', unlockAudio, { passive: true });
-  document.addEventListener('mousedown', unlockAudio);
-
   function playSongId(id) {
     var a = ensureAudio();
+    prefetched = { id: '', url: '' };
     return serverFetch('/music/url?id=' + encodeURIComponent(id)).then(function (res) {
       a.src = res.url;
       playingSongId = String(id);
       listen.progress = 0;
-      return a.play();
+      var p = a.play();
+      return p && p.then ? p : Promise.resolve();
     });
   }
 
-  /* 预先换好地址：切歌就取，点播放时同步 play()，不会丢手势。 */
+  /* 预先换好地址，但**不**往 audio 上挂 —— 挂上去可能被别的地方覆盖。
+     点播放时再把 url 赋给 src 并同步 play()，这样一定在点击的手势里。 */
+  var prefetched = { id: '', url: '' };
   var prefetching = '';
   function prefetchCurrent() {
     var song = currentSong();
     var id = String((song && song.neteaseId) || '');
-    if (!id || id === playingSongId || id === prefetching) return;
+    if (!id || prefetched.id === id || prefetching === id) return;
     prefetching = id;
-    var a = ensureAudio();
     serverFetch('/music/url?id=' + encodeURIComponent(id)).then(function (res) {
-      if (prefetching !== id) return;
-      a.src = res.url;
-      playingSongId = id;
+      prefetched = { id: id, url: res.url };
     }).catch(function () { /* 拿不到就算了，点播放时会再试 */ })
       .then(function () { prefetching = ''; });
   }
@@ -3060,9 +3044,12 @@
         toast('这首还没有音源。');
         return;
       }
-      if (playingSongId === id && a.src && a.src.indexOf('data:') !== 0) {
-        // 地址已就绪：这一行仍然在点击的调用栈里，能播
-        a.play().catch(function () { toast('再点一次播放。'); });
+      if (prefetched.id === id && prefetched.url) {
+        // 同步：赋值 + play 都在点击的调用栈里
+        a.src = prefetched.url;
+        playingSongId = id;
+        var p = a.play();
+        if (p && p.catch) p.catch(function () { toast('再点一次播放。'); });
       } else {
         playSongId(id).then(function () {
           updatePlayUi();
