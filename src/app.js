@@ -2897,6 +2897,7 @@
     renderInlinePlaylist();
     updateProgressUi();
     updatePlayUi();
+    prefetchCurrent();
     if (sheetName === 'playlist') openSheet('playlist');
   }
 
@@ -3003,6 +3004,23 @@
     }
   }
 
+  /* 第一次碰屏幕时先把 audio 元素"解锁"：
+     放一段 0.1 秒的静音 wav，之后异步取到地址再 play 也不会被浏览器拦。 */
+  var SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+  var audioUnlocked = false;
+  function unlockAudio() {
+    if (audioUnlocked) return;
+    var a = ensureAudio();
+    audioUnlocked = true;
+    try {
+      a.src = SILENT_WAV;
+      var p = a.play();
+      if (p && p.then) p.then(function () { a.pause(); }).catch(function () {});
+    } catch (e) { /* 忽略：解锁失败就退回"点两次" */ }
+  }
+  document.addEventListener('touchstart', unlockAudio, { passive: true });
+  document.addEventListener('mousedown', unlockAudio);
+
   function playSongId(id) {
     var a = ensureAudio();
     return serverFetch('/music/url?id=' + encodeURIComponent(id)).then(function (res) {
@@ -3011,6 +3029,22 @@
       listen.progress = 0;
       return a.play();
     });
+  }
+
+  /* 预先换好地址：切歌就取，点播放时同步 play()，不会丢手势。 */
+  var prefetching = '';
+  function prefetchCurrent() {
+    var song = currentSong();
+    var id = String((song && song.neteaseId) || '');
+    if (!id || id === playingSongId || id === prefetching) return;
+    prefetching = id;
+    var a = ensureAudio();
+    serverFetch('/music/url?id=' + encodeURIComponent(id)).then(function (res) {
+      if (prefetching !== id) return;
+      a.src = res.url;
+      playingSongId = id;
+    }).catch(function () { /* 拿不到就算了，点播放时会再试 */ })
+      .then(function () { prefetching = ''; });
   }
 
   function setPlaying(play) {
@@ -3026,10 +3060,13 @@
         toast('这首还没有音源。');
         return;
       }
-      if (playingSongId === id && a.src) {
+      if (playingSongId === id && a.src && a.src.indexOf('data:') !== 0) {
+        // 地址已就绪：这一行仍然在点击的调用栈里，能播
         a.play().catch(function () { toast('再点一次播放。'); });
       } else {
-        playSongId(id).catch(function (err) {
+        playSongId(id).then(function () {
+          updatePlayUi();
+        }).catch(function (err) {
           listen.playing = false;
           updatePlayUi();
           toast(err.message || '放不出来。');
