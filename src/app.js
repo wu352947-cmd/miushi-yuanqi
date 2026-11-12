@@ -767,7 +767,13 @@
   function pushServerState() {
     syncTimer = null;
     if (!serverOnline) return;
-    serverFetch('/state', { method: 'PUT', body: { state: serverSnapshot() } }).catch(function (err) {
+    serverFetch('/state', { method: 'PUT', body: { state: serverSnapshot() } }).then(function () {
+      /* 设置刚改过：等这次 PUT 真的落库，再拉首页那几块，否则拿到的是旧值 */
+      if (homePendingReload) {
+        homePendingReload = false;
+        fetchHome(true);
+      }
+    }).catch(function (err) {
       if (!syncFailedNotified) {
         syncFailedNotified = true;
         toast('同步到服务器失败：' + err.message);
@@ -2556,6 +2562,7 @@
      以前这四块全是写死的（福州小雨 18°C、还有 12 天生日），看两次就穿帮。 */
   var homeDynamic = { loaded: false, loading: false, data: null, cid: '', at: 0 };
   var homeNoteWriting = false;
+  var homePendingReload = false;
 
   function noteClock(iso) {
     if (!iso) return '';
@@ -2657,6 +2664,19 @@
         }
       })
       .catch(function () { homeDynamic.loading = false; });
+  }
+
+  /* 改完设置后的重拉：先拉一次给个快反馈，再由 pushServerState
+     的成功回调补一次（那一次才是准的），1.8 秒还没好就自己兜一次。 */
+  function homeReloadSoon() {
+    homePendingReload = true;
+    fetchHome(true);
+    setTimeout(function () {
+      if (homePendingReload) {
+        homePendingReload = false;
+        fetchHome(true);
+      }
+    }, 1800);
   }
 
   function renderHome() {
@@ -4503,7 +4523,7 @@
       state.settings.homeCity = String(e.target.value || '').trim();
       save();
       homeDynamic.loaded = false;
-      fetchHome(true);
+      homeReloadSoon();
       toast(state.settings.homeCity
         ? '首页天气改成「' + state.settings.homeCity + '」了。'
         : '不填城市就不显示天气。');
@@ -4519,7 +4539,7 @@
       state.settings.birthday = v;
       save();
       homeDynamic.loaded = false;
-      fetchHome(true);
+      homeReloadSoon();
       toast(v ? '记住了。' : '不填就不显示倒计时。');
     });
     var hnSwitch = $('#homeNoteSwitch');
@@ -4528,7 +4548,7 @@
       save();
       renderSettings();
       homeDynamic.loaded = false;
-      fetchHome(true);
+      homeReloadSoon();
       toast(state.settings.homeNoteEnabled ? '她每天会在首页留一句话。' : '首页不再留话了。');
     });
     $('#startDate').addEventListener('change', function (e) {
