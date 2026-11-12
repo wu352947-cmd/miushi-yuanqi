@@ -140,6 +140,7 @@
       hideIsland();
       var u = res.usage || {};
       toast('压缩好了：折叠 ' + (u.toCount || 0) + ' 条，腾出约 ' + fmtTokens(u.freedTokens || 0));
+      closeSheet(); // 面板里点完就收，别让用户对着旧数据发呆
       return loadServerApp().catch(function () {});
     }).catch(function (err) {
       compressing = false;
@@ -173,6 +174,7 @@
       .then(function () {
         ctxDigest = null;
         toast('已恢复：完整历史会重新发给模型。');
+        closeSheet();
         return loadServerApp().catch(function () {});
       }).catch(function (err) {
         toast(err.message || '没恢复成功。');
