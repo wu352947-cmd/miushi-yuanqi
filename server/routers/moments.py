@@ -14,6 +14,26 @@ from .deps import get_conn
 router = APIRouter(prefix="/api/moments", tags=["moments"])
 
 
+def _persona_for(conn, character_id: str):
+    """这场聊天绑定的那个人设。
+
+    发帖和评论必须用同一套解析，否则会出现「我发的帖子叫杭杭、
+    我发的评论却叫另一个名字」。
+    """
+    from .. import prompts as prompts_mod
+
+    personas = [db.persona_json(r) for r in conn.execute("SELECT * FROM user_personas").fetchall()]
+    chat_row = db.get_chat_row(conn, character_id) if character_id else None
+    if chat_row:
+        character = db.get_character(conn, character_id) or {}
+        persona, _ = prompts_mod.resolve_persona(
+            db.chat_json(conn, chat_row, include_messages=False), character, personas
+        )
+        if persona:
+            return persona
+    return personas[0] if personas else None
+
+
 @router.get("")
 def list_feed(character_id: str = "", limit: int = 50, conn=Depends(get_conn)) -> dict:
     """一整个朋友圈：动态 + 这个世界里的 NPC。"""
@@ -37,18 +57,7 @@ def create_post(payload: PostIn, conn=Depends(get_conn)) -> dict:
         raise ApiError("badrequest", "写点什么再发。")
     if len(text) > 1000:
         raise ApiError("badrequest", "太长了，朋友圈不是写作文的地方。")
-    personas = [db.persona_json(r) for r in conn.execute("SELECT * FROM user_personas").fetchall()]
-    chat_row = db.get_chat_row(conn, character_id)
-    persona = None
-    if chat_row:
-        character = db.get_character(conn, character_id) or {}
-        from .. import prompts as prompts_mod
-
-        persona, _ = prompts_mod.resolve_persona(
-            db.chat_json(conn, chat_row, include_messages=False), character, personas
-        )
-    if not persona and personas:
-        persona = personas[0]
+    persona = _persona_for(conn, character_id)
     name = (persona or {}).get("name") or "我"
     pid_ = (persona or {}).get("id") or ""
     post = db.create_post(conn, character_id, "persona", pid_, name, text, source="manual")
@@ -96,8 +105,7 @@ def add_reply(post_id: str, payload: ReplyIn, conn=Depends(get_conn)) -> dict:
     row = db.get_post_row(conn, post_id)
     if not row:
         raise ApiError("notfound", "这条动态已经不在了。", status=404)
-    personas = [db.persona_json(r) for r in conn.execute("SELECT * FROM user_personas").fetchall()]
-    persona = personas[0] if personas else None
+    persona = _persona_for(conn, row["character_id"])
     name = (persona or {}).get("name") or "我"
     pid_ = (persona or {}).get("id") or ""
     reply = db.add_reply(conn, post_id, "persona", pid_, name, text[:500])

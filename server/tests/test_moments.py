@@ -130,3 +130,14 @@ def test_delete_post_removes_replies(client, monkeypatch):
     assert client.delete("/api/moments/%s" % pid).status_code == 200
     feed = client.get("/api/moments?character_id=miao").json()
     assert feed["posts"] == []
+
+
+
+def test_reply_author_matches(client, monkeypatch):
+    """评论作者必须和发帖作者一致。"""
+    monkeypatch.setenv("MSYQ_MOCK", "1")
+    r = client.post("/api/moments", json={"characterId": "miao", "text": "x"})
+    pid = r.json()["post"]["id"]
+    name = r.json()["post"]["authorName"]
+    rr = client.post("/api/moments/%s/replies" % pid, json={"text": "y"})
+    assert rr.json()["reply"]["authorName"] == name
