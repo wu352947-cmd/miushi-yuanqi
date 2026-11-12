@@ -1662,7 +1662,7 @@
     if (view === 'chat') { scrollChatBottom(false); scheduleProactive(); renderContextBar(); }
     if (view === 'memory') { renderMemories(); refreshMemoriesQuiet(); }
     if (view === 'me') renderMe();
-    if (view === 'listen') renderListen();
+    if (view === 'listen') { renderListen(); loadMusicState(); }
     if (view === 'circle') renderCircle();
     if (view === 'settings') renderSettings();
     if (view === 'characters') renderCharLibrary();
@@ -2950,18 +2950,93 @@
     if (listen.timer) { clearInterval(listen.timer); listen.timer = null; }
   }
 
+  /* ---------- 真实音源 ----------
+     歌单里每条都带 neteaseId；播放时才去换直链（URL 约 20 分钟过期，不能缓存）。
+     没登录也能放普通歌；VIP 歌会失败，那就提示一句，不假装在放。 */
+  var audioEl = null;
+  var playingSongId = '';
+  var musicState = { loggedIn: false, nickname: '', avatar: '' };
+
+  function ensureAudio() {
+    if (audioEl) return audioEl;
+    audioEl = new Audio();
+    audioEl.preload = 'none';
+    audioEl.addEventListener('timeupdate', function () {
+      listen.progress = audioEl.currentTime || 0;
+      updateProgressUi();
+    });
+    audioEl.addEventListener('ended', function () { nextSong(true); });
+    audioEl.addEventListener('error', function () {
+      if (!audioEl.src) return;
+      listen.playing = false;
+      updatePlayUi();
+      toast('这首放不出来，换一首试试。');
+    });
+    return audioEl;
+  }
+
+  function loadMusicState() {
+    return serverFetch('/music/me').then(function (st) {
+      musicState = st && typeof st === 'object' ? st : { loggedIn: false };
+      renderMusicAccount();
+      return musicState;
+    }).catch(function () { return musicState; });
+  }
+
+  function renderMusicAccount() {
+    var ava = document.getElementById('musicAccountAva');
+    var name = document.getElementById('musicAccountName');
+    var sub2 = document.getElementById('musicAccountSub');
+    if (!name) return;
+    if (musicState.loggedIn) {
+      if (name) name.textContent = musicState.nickname || '已连接';
+      if (sub2) sub2.textContent = '网易云已连接';
+      if (ava) {
+        ava.innerHTML = musicState.avatar
+          ? '<img src="' + esc(musicState.avatar) + '" alt="">'
+          : '♫';
+      }
+    } else {
+      if (name) name.textContent = '登录网易云';
+      if (sub2) sub2.textContent = '登录后就能听见真的声音';
+      if (ava) ava.textContent = '♫';
+    }
+  }
+
+  function playSongId(id) {
+    var a = ensureAudio();
+    return serverFetch('/music/url?id=' + encodeURIComponent(id)).then(function (res) {
+      a.src = res.url;
+      playingSongId = String(id);
+      listen.progress = 0;
+      return a.play();
+    });
+  }
+
   function setPlaying(play) {
     listen.playing = !!play;
     stopTimer();
+    var a = ensureAudio();
     if (listen.playing) {
-      listen.timer = setInterval(function () {
-        listen.progress += 1;
-        if (listen.progress >= currentSong().dur) {
-          nextSong(true);
-          return;
-        }
-        updateProgressUi();
-      }, 1000);
+      var song = currentSong();
+      var id = String((song && song.neteaseId) || '');
+      if (!id) {
+        listen.playing = false;
+        updatePlayUi();
+        toast('这首还没有音源。');
+        return;
+      }
+      if (playingSongId === id && a.src) {
+        a.play().catch(function () { toast('再点一次播放。'); });
+      } else {
+        playSongId(id).catch(function (err) {
+          listen.playing = false;
+          updatePlayUi();
+          toast(err.message || '放不出来。');
+        });
+      }
+    } else {
+      a.pause();
     }
     updatePlayUi();
   }
@@ -2970,6 +3045,8 @@
     listen.playlist = pi;
     listen.song = si;
     listen.progress = 0;
+    playingSongId = '';
+    if (audioEl) { audioEl.pause(); audioEl.removeAttribute('src'); }
     state.listen = { playlist: pi, song: si };
     save();
     renderListen();
@@ -3459,6 +3536,93 @@
       updateChatHeader();
       toast(nickname ? '备注好了。' : '恢复原名了。');
     }).catch(function (err) { toast(err.message || '没存上。'); });
+  }
+
+  SHEETS.musicLogin = function () {
+    if (musicState.loggedIn) {
+      return {
+        title: '网易云',
+        body: '<p class="sheet-label">已连接</p>' +
+          '<div class="option is-selected">' +
+            '<span class="option__main"><span class="option__title">' + esc(musicState.nickname || '网易云账号') + '</span>' +
+            '<span class="option__desc">歌单和会员音质都能用了</span></span>' +
+          '</div>',
+        foot: '<button class="btn" type="button" data-close>好</button>' +
+          '<button class="btn" type="button" data-a2="music-logout">退出登录</button>'
+      };
+    }
+    return {
+      title: '登录网易云',
+      body: '<p class="sheet-label">用手机号收一条验证码</p>' +
+        '<p class="field-label">手机号</p>' +
+        '<input class="field" type="tel" id="musicPhone" maxlength="11" inputmode="numeric" ' +
+          'autocomplete="tel" placeholder="11 位手机号">' +
+        '<p class="field-label">验证码</p>' +
+        '<div class="music-code">' +
+          '<input class="field" type="text" id="musicCaptcha" maxlength="6" inputmode="numeric" ' +
+            'autocomplete="one-time-code" placeholder="短信里的 6 位">' +
+          '<button class="btn btn--ghost" type="button" id="musicSendCode" data-a2="music-send">获取验证码</button>' +
+        '</div>' +
+        '<p class="sheet-label">验证码只用来登录，账号信息存在服务器本地</p>',
+      foot: '<button class="btn" type="button" data-close>取消</button>' +
+        '<button class="btn btn--primary" type="button" data-a2="music-login">登录</button>'
+    };
+  };
+
+  var musicCodeTimer = 0;
+  function musicSendCode() {
+    var phone = (document.getElementById('musicPhone') || {}).value || '';
+    phone = phone.trim();
+    if (!/^\d{11}$/.test(phone)) { toast('手机号得是 11 位数字。'); return; }
+    var btn = document.getElementById('musicSendCode');
+    if (btn && btn.disabled) return;
+    serverFetch('/music/captcha', { method: 'POST', body: { phone: phone } })
+      .then(function () {
+        toast('验证码发过去了。');
+        var left = 60;
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = left + 's';
+        }
+        clearInterval(musicCodeTimer);
+        musicCodeTimer = setInterval(function () {
+          left -= 1;
+          var b = document.getElementById('musicSendCode');
+          if (!b || left <= 0) {
+            clearInterval(musicCodeTimer);
+            if (b) { b.disabled = false; b.textContent = '重新获取'; }
+            return;
+          }
+          b.textContent = left + 's';
+        }, 1000);
+      })
+      .catch(function (err) { toast(err.message || '验证码没发出去。'); });
+  }
+
+  function musicLogin() {
+    var phone = ((document.getElementById('musicPhone') || {}).value || '').trim();
+    var code = ((document.getElementById('musicCaptcha') || {}).value || '').trim();
+    if (!phone || !code) { toast('手机号和验证码都要填。'); return; }
+    serverFetch('/music/login', { method: 'POST', body: { phone: phone, captcha: code } })
+      .then(function (st) {
+        musicState = st;
+        clearInterval(musicCodeTimer);
+        closeSheet();
+        renderMusicAccount();
+        toast('连上了。');
+      })
+      .catch(function (err) { toast(err.message || '没登录上。'); });
+  }
+
+  function musicLogout() {
+    serverFetch('/music/logout', { method: 'POST' })
+      .then(function () {
+        musicState = { loggedIn: false, nickname: '', avatar: '' };
+        closeSheet();
+        renderMusicAccount();
+        toast('退出了。');
+      })
+      .catch(function (err) { toast(err.message || '没退掉。'); });
   }
 
   SHEETS.memory = function (id) {
@@ -4792,6 +4956,10 @@
     if (action === 'backup') return backupNow();
     if (action === 'mic') return toast('语音输入是样稿示意，先替你收好。');
     if (action === 'call') return toast('通话是样稿示意，缪诗在文字里等你。');
+    if (action === 'music-account') { openSheet('musicLogin'); return true; }
+    if (action === 'music-send') { musicSendCode(); return true; }
+    if (action === 'music-login') { musicLogin(); return true; }
+    if (action === 'music-logout') { musicLogout(); return true; }
     if (action === 'play') return setPlaying(!listen.playing);
     if (action === 'home-play') return setPlaying(!listen.playing);
     if (action === 'next') return nextSong(false);
