@@ -72,21 +72,74 @@ def _body(data: dict) -> dict:
 
 
 # ---------------------------------------------------------------- 登录态
+# Set-Cookie 里的这些是属性，不是 cookie 本身
+_COOKIE_ATTRS = {
+    "path", "domain", "expires", "max-age", "samesite", "secure",
+    "httponly", "version", "comment", "priority",
+}
+
+
+def clean_cookie(raw) -> str:
+    """把 Set-Cookie 拼出来的脏串，清成合法的 Cookie 请求头。
+
+    ncm-api 有时给 list（每条一个 Set-Cookie），有时给 join 过的长串，两种都接。
+    """
+    items = raw if isinstance(raw, (list, tuple)) else [raw]
+    out: dict[str, str] = {}
+    for item in items:
+        for chunk in str(item or "").split(";"):
+            chunk = chunk.strip()
+            if not chunk or "=" not in chunk:
+                continue
+            k, v = chunk.split("=", 1)
+            k, v = k.strip(), v.strip()
+            if not k or k.lower() in _COOKIE_ATTRS:
+                continue
+            out[k] = v
+    return "; ".join("%s=%s" % (k, v) for k, v in out.items())
+
+
 def cookie_of(conn) -> str:
     row = db.music_auth_row(conn)
     if not row or not row["cookie_enc"]:
         return ""
     try:
-        return auth.decrypt_key(row["cookie_enc"])
+        return clean_cookie(auth.decrypt_key(row["cookie_enc"]))
     except Exception:  # noqa: BLE001
         LOG.warning("网易云 cookie 解不开，当作未登录")
         return ""
+
+
+_profile_backfilled = False
 
 
 def state(conn) -> dict:
     row = db.music_auth_row(conn)
     if not row or not row["cookie_enc"]:
         return {"loggedIn": False, "nickname": "", "avatar": "", "userId": ""}
+
+    # 老数据可能只存了 cookie、没存昵称（cookie 脏的时候拿不到账号信息）。
+    # 这里补一次，成功后写回库，之后就不会再问了。
+    global _profile_backfilled
+    if (not row["nickname"] or not row["user_id"]) and not _profile_backfilled:
+        _profile_backfilled = True
+        try:
+            acct = _body(_call("/user/account", cookie=cookie_of(conn)))
+            prof = acct.get("profile") or {}
+            if prof.get("userId"):
+                db.save_music_auth(
+                    conn,
+                    row["cookie_enc"],
+                    str(prof.get("userId") or ""),
+                    str(prof.get("nickname") or ""),
+                    str(prof.get("avatarUrl") or ""),
+                )
+                row = db.music_auth_row(conn)
+                LOG.info("网易云账号信息已补齐：%s", prof.get("nickname"))
+        except Exception:  # noqa: BLE001
+            LOG.warning("补账号信息失败，先用空昵称")
+            _profile_backfilled = False   # 下次再试
+
     return {
         "loggedIn": True,
         "nickname": row["nickname"] or "",
@@ -124,7 +177,7 @@ def login(conn, phone: str, captcha: str) -> dict:
             400: "网易云拒了这个请求，稍后再试。",
         }.get(code, "没登录上（%s）。" % code)
         raise ApiError("badrequest", msg)
-    cookie = body.get("cookie") or ""
+    cookie = clean_cookie(data.get("cookie") or body.get("cookie") or "")
     if not cookie:
         raise ApiError("badgateway", "登录成功了，但没拿到凭证。")
     profile = body.get("profile") or {}
@@ -183,9 +236,7 @@ def qr_check(conn, key: str) -> dict:
         )
         return {"code": code, "message": msg, "loggedIn": False}
 
-    cookie = body.get("cookie") or ""
-    if not cookie and isinstance(data.get("cookie"), list):
-        cookie = ";".join(data["cookie"])
+    cookie = clean_cookie(data.get("cookie") or body.get("cookie") or "")
     if not cookie:
         raise ApiError("badgateway", "扫码成功了，但没拿到凭证，重试一次。")
 
