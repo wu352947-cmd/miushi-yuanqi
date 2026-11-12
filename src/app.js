@@ -57,6 +57,9 @@
     if (titleEl) titleEl.textContent = opts.title || '上下文快满了';
     var descEl = document.getElementById('islandDesc');
     if (descEl) descEl.textContent = opts.desc || '';
+    // busy：压缩进行中，只留文字不留按钮——这时候按「继续玩」也没意义
+    var islActions = el.querySelector('.island__actions');
+    if (islActions) islActions.hidden = !!opts.busy;
     islandAction = typeof opts.onGo === 'function' ? opts.onGo : null;
     if (islandTimer) { clearTimeout(islandTimer); islandTimer = null; }
     layer.hidden = false;
@@ -91,6 +94,117 @@
       onGo: function () { toast('压缩逻辑还没接上，这只是样式预览。'); }
     });
   }
+  /* ---------- 上下文压缩 ----------
+     压缩只改「发给模型什么」：被折叠的消息一条都不删，随时能恢复。
+     摘要落在 chat_digests 表里，读写在服务端，前端只负责展示和触发。 */
+  var ctxDigest = null;      // 当前会话的摘要缓存
+  var compressing = false;
+
+  function currentChatId() {
+    var chat = state.chats[state.currentCharacterId];
+    return (chat && chat.id) || '';
+  }
+
+  function openContextSheet() {
+    var chatId = currentChatId();
+    if (!chatId) { toast('先有一段对话再压缩。'); return; }
+    serverFetch('/chats/id/' + encodeURIComponent(chatId) + '/digest').then(function (res) {
+      ctxDigest = res.digest || null;
+      openSheet('context');
+    }).catch(function (err) {
+      ctxDigest = null;
+      openSheet('context');
+      toast(err.message || '读不到摘要。');
+    });
+  }
+
+  function runCompress() {
+    var chatId = currentChatId();
+    if (!chatId) { toast('先有一段对话再压缩。'); return; }
+    if (compressing) { toast('正在压缩，稍等一下。'); return; }
+    compressing = true;
+    var used = contextUsed(state.chats[state.currentCharacterId]);
+    var budget = contextBudget();
+    var pct = budget > 0 ? Math.round(used / budget * 100) : 0;
+    showIsland({
+      percent: Math.max(6, Math.min(99, pct)),
+      title: '正在压缩',
+      desc: '把前面那段对话整理成摘要，先不要关页面',
+      busy: true
+    });
+    serverFetch('/chats/id/' + encodeURIComponent(chatId) + '/compress', {
+      method: 'POST',
+      body: {}
+    }).then(function (res) {
+      compressing = false;
+      hideIsland();
+      var u = res.usage || {};
+      toast('压缩好了：折叠 ' + (u.toCount || 0) + ' 条，腾出约 ' + fmtTokens(u.freedTokens || 0));
+      return loadServerApp().catch(function () {});
+    }).catch(function (err) {
+      compressing = false;
+      hideIsland();
+      toast(err.message || '压缩没成功。');
+    });
+  }
+
+  function saveDigestText() {
+    var chatId = currentChatId();
+    var el = document.getElementById('digestText');
+    if (!chatId || !el) return;
+    var text = (el.value || '').trim();
+    if (!text) { toast('摘要不能是空的。'); return; }
+    serverFetch('/chats/id/' + encodeURIComponent(chatId) + '/digest', {
+      method: 'PATCH',
+      body: { text: text }
+    }).then(function (res) {
+      ctxDigest = res.digest || null;
+      toast('摘要改好了，下一轮就按这个走。');
+      openSheet('digest');
+    }).catch(function (err) {
+      toast(err.message || '没保存成功。');
+    });
+  }
+
+  function restoreFullHistory() {
+    var chatId = currentChatId();
+    if (!chatId) return;
+    serverFetch('/chats/id/' + encodeURIComponent(chatId) + '/digest', { method: 'DELETE' })
+      .then(function () {
+        ctxDigest = null;
+        toast('已恢复：完整历史会重新发给模型。');
+        return loadServerApp().catch(function () {});
+      }).catch(function (err) {
+        toast(err.message || '没恢复成功。');
+      });
+  }
+
+  /* 超阈值时弹岛。同一天同一场只提醒一次——反复弹窗会变成骚扰。 */
+  function maybeIslandPrompt(ratio) {
+    var cfg = state.settings || {};
+    if (cfg.contextAuto === false) return;
+    if (compressing) return;
+    var layer = document.getElementById('islandLayer');
+    if (layer && !layer.hidden) return;
+    var th = (Number(cfg.contextThreshold) || 60) / 100;
+    if (!(ratio >= th)) return;
+    var chat = state.chats[state.currentCharacterId];
+    if (!chat || !chat.id) return;
+    var today = new Date().toISOString().slice(0, 10);
+    var key = 'msyq.island.' + chat.id;
+    try {
+      if (localStorage.getItem(key) === today) return;
+      localStorage.setItem(key, today);
+    } catch (e) { return; }
+    var used = contextUsed(chat);
+    showIsland({
+      percent: Math.round(ratio * 100),
+      title: '上下文快满了',
+      desc: '已经有 ' + fmtTokens(used) + '。压缩后前面的剧情会收成一段摘要，聊天记录一条不少。',
+      onGo: openContextSheet
+    });
+  }
+
   (function bindIsland() {
     function bind() {
       var el = document.getElementById('island');
@@ -160,6 +274,7 @@
     }
     bar.classList.toggle('is-warn', ratio >= 0.75 && ratio < 1);
     bar.classList.toggle('is-full', ratio >= 1);
+    maybeIslandPrompt(ratio);
   }
 
   /* 按 OpenAI 兼容 usage 结构渲染统计：prompt_tokens / completion_tokens / total_tokens */
@@ -4490,6 +4605,7 @@
       title: '聊天菜单',
       body: '<div class="menu-list">' +
         row('data-a2="preview-open"', '<svg viewBox="0 0 20 20" fill="none"><path d="M4 4.6h12v9.8H9.6L6 17.4v-3H4z"/><path d="M7 8h6M7 10.6h3.6"/></svg>', '查看这次发给模型的内容', '按真实顺序拼好的提示词预览') +
+        row('data-a2="ctx-open"', '<svg viewBox="0 0 20 20" fill="none"><path d="M4.4 5.2h11.2M4.4 10h11.2M4.4 14.8h6.4"/><path d="M14.2 12.6v4.2M12.1 14.7h4.2"/></svg>', '压缩上下文', '前面的剧情收成摘要，腾出空间') +
         row('data-action="remember-last"', '<svg viewBox="0 0 20 20" fill="none"><path d="M4 4.6h12v9.8H9.6L6 17.4v-3H4z"/><path d="M7 8h6M7 10.6h3.6"/></svg>', '记住这句话', '把最后一条回复收进记忆库') +
         row('data-open="presetSwitch"', '<svg viewBox="0 0 20 20" fill="none"><path d="M5.4 3.6h9.2c.8 0 1.4.6 1.4 1.4v10c0 .8-.6 1.4-1.4 1.4H5.4c-.8 0-1.4-.6-1.4-1.4V5c0-.8.6-1.4 1.4-1.4z"/><path d="M7.2 7h5.6M7.2 10h5.6M7.2 13h3.4"/></svg>', '提示词预设 · 这场文风', '换文风，或设为角色默认') +
         row('data-open="chatBook"', '<svg viewBox="0 0 20 20" fill="none"><path d="M4.4 4.6h5.2c.7 0 1.2.5 1.2 1.2v9.6H5.6c-.7 0-1.2-.5-1.2-1.2V4.6z"/><path d="M15.6 4.6h-5.2c-.7 0-1.2.5-1.2 1.2v9.6h5.2c-.7 0-1.2-.5-1.2-1.2V4.6z"/></svg>', '这场聊天的世界书', '常开与关键词') +
@@ -4548,6 +4664,62 @@
     updateThinkCap();
     toast('思考深度：' + (REASON_TEXT[lv] || lv));
   }
+  SHEETS.context = function () {
+    var chat = state.chats[state.currentCharacterId];
+    var used = contextUsed(chat);
+    var budget = contextBudget();
+    var pct = budget > 0 ? Math.round(used / budget * 100) : 0;
+    var d = ctxDigest;
+    var body = '<div class="reason-desc">压缩会把最早的一段对话收成摘要：那些消息不再发给模型，' +
+      '但聊天记录里一条都不会少，随时能恢复。</div>';
+    body += '<div class="list-row list-row--static list-row--stack">' +
+      '<span class="row-main"><span class="row-title serif">现在占用</span>' +
+      '<span class="row-sub">' + fmtTokens(used) + ' / ' + fmtTokens(budget) + ' · ' + pct + '%</span></span></div>';
+    body += '<div class="list-row list-row--static">' +
+      '<span class="row-main"><span class="row-title serif">立即压缩</span>' +
+      '<span class="row-sub">折叠最早的一段，留最近的对话原样</span></span>' +
+      '<button class="value-btn" type="button" data-a2="ctx-run">压缩</button></div>';
+    if (d) {
+      body += '<div class="list-row list-row--static">' +
+        '<span class="row-main"><span class="row-title serif">前情摘要</span>' +
+        '<span class="row-sub">已折叠 ' + (d.messageCount || 0) + ' 条 · ' + (d.digestTokens || 0) + ' token</span></span>' +
+        '<button class="value-btn" type="button" data-a2="ctx-digest">查看</button></div>';
+      body += '<div class="list-row list-row--static">' +
+        '<span class="row-main"><span class="row-title serif">恢复完整历史</span>' +
+        '<span class="row-sub">撤销压缩，消息本来就都在</span></span>' +
+        '<button class="value-btn" type="button" data-a2="ctx-restore">恢复</button></div>';
+    }
+    return {
+      title: '上下文压缩',
+      body: body,
+      foot: '<button class="btn" type="button" data-close>关闭</button>'
+    };
+  };
+  SHEETS.digest = function () {
+    var d = ctxDigest;
+    if (!d) {
+      return {
+        title: '前情摘要',
+        body: '<p class="sheet-note" style="text-align:left">这段对话还没有压缩过。' +
+          '去「压缩上下文」里点一次压缩，摘要就会出现在这里。</p>',
+        foot: '<button class="btn" type="button" data-close>知道了</button>'
+      };
+    }
+    var body = '<div class="reason-desc">模型读到的就是这一段，代替了更早的对话。' +
+      '写得不顺手可以直接改——改完下一轮立刻生效。</div>';
+    body += '<textarea id="digestText" style="width:100%;min-height:190px;border-radius:16px;' +
+      'padding:13px;font-size:12.5px;line-height:1.75;border:1px solid rgba(0,0,0,.08);' +
+      'background:rgba(255,255,255,.72);color:inherit;font-family:inherit;resize:vertical">' +
+      esc(d.text || '') + '</textarea>';
+    body += '<p class="sheet-meta"><span>覆盖 ' + (d.messageCount || 0) + ' 条</span><span>' +
+      (d.digestTokens || 0) + ' token</span></p>';
+    return {
+      title: '前情摘要',
+      body: body,
+      foot: '<button class="btn" type="button" data-close>取消</button>' +
+        '<button class="btn btn--primary" type="button" data-a2="digest-save">保存</button>'
+    };
+  };
   SHEETS.contextSettings = function () {
     var auto = state.settings.contextAuto !== false;
     var th = Number(state.settings.contextThreshold) || 60;
@@ -4651,6 +4823,11 @@
 
   /* ---------------- A2 交互分发 ---------------- */
   function handleA2Action(action, el) {
+    if (action === 'ctx-open') { openContextSheet(); return true; }
+    if (action === 'ctx-run') { closeSheet(); runCompress(); return true; }
+    if (action === 'ctx-digest') { openSheet('digest'); return true; }
+    if (action === 'digest-save') { saveDigestText(); return true; }
+    if (action === 'ctx-restore') { closeSheet(); restoreFullHistory(); return true; }
     if (action === 'ctx-preview') { previewContextIsland(); return true; }
     if (action === 'ctx-toggle') {
       state.settings.contextAuto = !state.settings.contextAuto;
