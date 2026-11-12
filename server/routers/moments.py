@@ -4,6 +4,8 @@
 不然会被当成 id 吃掉。
 """
 
+import shutil
+
 from fastapi import APIRouter, Depends, File, UploadFile
 
 from .. import db, moments
@@ -94,6 +96,12 @@ async def generate(character_id: str = "", conn=Depends(get_conn)) -> dict:
 
 @router.delete("/{post_id}")
 def drop_post(post_id: str, conn=Depends(get_conn)) -> dict:
+    """删动态。配图文件要一起清掉——只删数据库行的话，
+    那些 jpg 会永远躺在磁盘上，谁也找不到。"""
+    if db.get_post_row(conn, post_id):
+        folder = db.data_dir() / "uploads" / "posts" / post_id
+        if folder.is_dir():
+            shutil.rmtree(folder, ignore_errors=True)
     return {"ok": db.delete_post(conn, post_id)}
 
 
