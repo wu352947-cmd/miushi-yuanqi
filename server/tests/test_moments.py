@@ -188,3 +188,51 @@ def test_post_images_upload_list_delete(client, monkeypatch):
     left = gone.json()["images"]
     assert len(left) == 1
     assert left[0]["path"].endswith("02.png")
+
+def test_character_reacts_to_my_post(client, monkeypatch):
+    """我发一条，她本人会来评论——不是 NPC，是她的名字。"""
+    monkeypatch.setenv("MSYQ_MOCK", "1")
+    _prime(client)
+    pid = client.post(
+        "/api/moments", json={"characterId": "miao", "text": "今天走了很远的路。"}
+    ).json()["post"]["id"]
+
+    res = asyncio.run(moments.character_react(pid))
+    assert res["ok"], res
+    assert res["reply"]["authorKind"] == "character"
+
+    feed = client.get("/api/moments?character_id=miao").json()
+    kinds = [r["authorKind"] for r in feed["posts"][0]["replies"]]
+    assert "character" in kinds
+
+
+def test_character_replies_to_my_comment(client, monkeypatch):
+    """我在她的动态下面评论，她会回我。"""
+    monkeypatch.setenv("MSYQ_MOCK", "1")
+    _prime(client)
+    with db.get_db() as conn:
+        post = db.create_post(conn, "miao", "character", "miao", "缪诗", "晚饭做了两个菜。")
+
+    res = asyncio.run(moments.character_react(post["id"], my_text="看起来很好吃"))
+    assert res["ok"], res
+    assert res["reply"]["authorKind"] == "character"
+
+    feed = client.get("/api/moments?character_id=miao").json()
+    assert len(feed["posts"][0]["replies"]) == 1
+
+
+def test_character_speaks_at_most_twice_per_post(client, monkeypatch):
+    """同一个帖子下面她最多两句，不然刷屏。"""
+    monkeypatch.setenv("MSYQ_MOCK", "1")
+    _prime(client)
+    pid = client.post(
+        "/api/moments", json={"characterId": "miao", "text": "在窗边坐了一会儿。"}
+    ).json()["post"]["id"]
+
+    results = [asyncio.run(moments.character_react(pid)) for _ in range(3)]
+    assert results[0]["ok"] and results[1]["ok"]
+    assert results[2].get("skipped") is True
+
+    feed = client.get("/api/moments?character_id=miao").json()
+    mine = [r for r in feed["posts"][0]["replies"] if r["authorKind"] == "character"]
+    assert len(mine) == 2

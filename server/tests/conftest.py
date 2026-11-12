@@ -22,6 +22,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("MSYQ_DB_PATH", str(tmp_path / "test.db"))
     # 配图会落盘，也让它在临时目录里，别污染项目 data/
     monkeypatch.setenv("MSYQ_DATA_DIR", str(tmp_path))
+    # 发帖/评论会自动在后台让她回复，测试里这会和断言抢时序
+    monkeypatch.setenv("MSYQ_NO_AUTO_REACT", "1")
     monkeypatch.delenv("APP_PASSWORD", raising=False)
     monkeypatch.delenv("MSYQ_MOCK", raising=False)
     monkeypatch.delenv("MSYQ_MOCK_400", raising=False)

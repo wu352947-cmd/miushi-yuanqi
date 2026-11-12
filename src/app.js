@@ -2312,6 +2312,17 @@
     '</article>';
   }
 
+  /* 她的回复是后台生成的，几秒后才落库。这里补几次刷新，
+     正在打字的评论框不打断（刷了输入就没了）。 */
+  function circleRefreshLater() {
+    [5000, 13000, 26000].forEach(function (ms) {
+      setTimeout(function () {
+        if (circleReplyFor) return;
+        loadCircle();
+      }, ms);
+    });
+  }
+
   function renderCircleFeed() {
     var box = document.getElementById('circleFeed');
     if (!box) return;
@@ -2445,6 +2456,7 @@
         circlePending = [];
         closeSheet();
         toast('发表成功。');
+        circleRefreshLater();
         return loadCircle();
       })
       .catch(function (err) { toast(err.message || '没发出去。'); });
@@ -2459,6 +2471,7 @@
       body: { text: text }
     }).then(function () {
       circleReplyFor = '';
+      circleRefreshLater();
       return loadCircle();
     }).catch(function (err) { toast(err.message || '评论没发出去。'); });
   }

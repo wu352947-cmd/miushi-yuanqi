@@ -4,6 +4,8 @@
 不然会被当成 id 吃掉。
 """
 
+import asyncio
+import os
 import shutil
 
 from fastapi import APIRouter, Depends, File, UploadFile
@@ -14,6 +16,27 @@ from ..schemas import PostIn, ReplyIn
 from .deps import get_conn
 
 router = APIRouter(prefix="/api/moments", tags=["moments"])
+
+
+def _kick(coro) -> None:
+    """丢到后台跑。生成要几秒到几十秒，不能让发表/评论干等。
+
+    没有事件循环时（同步上下文里被调用）就把协程关掉，别留 warning。
+    MSYQ_NO_AUTO_REACT=1 时整体跳过——测试里后台任务会和断言抢时序。
+    """
+    if (os.environ.get("MSYQ_NO_AUTO_REACT") or "").strip() in ("1", "true", "on"):
+        try:
+            coro.close()
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    try:
+        asyncio.create_task(coro)
+    except RuntimeError:
+        try:
+            coro.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _persona_for(conn, character_id: str):
@@ -49,7 +72,7 @@ def list_feed(character_id: str = "", limit: int = 50, conn=Depends(get_conn)) -
 
 
 @router.post("")
-def create_post(payload: PostIn, conn=Depends(get_conn)) -> dict:
+async def create_post(payload: PostIn, conn=Depends(get_conn)) -> dict:
     """我发一条。作者固定是人设（persona）。"""
     character_id = (payload.characterId or "").strip()
     text = (payload.text or "").strip()
@@ -63,6 +86,8 @@ def create_post(payload: PostIn, conn=Depends(get_conn)) -> dict:
     name = (persona or {}).get("name") or "我"
     pid_ = (persona or {}).get("id") or ""
     post = db.create_post(conn, character_id, "persona", pid_, name, text, source="manual")
+    # 她看到你发了，后台接一句；发表本身不等她
+    _kick(moments.character_react(post["id"]))
     return {"ok": True, "post": post}
 
 
@@ -106,7 +131,7 @@ def drop_post(post_id: str, conn=Depends(get_conn)) -> dict:
 
 
 @router.post("/{post_id}/replies")
-def add_reply(post_id: str, payload: ReplyIn, conn=Depends(get_conn)) -> dict:
+async def add_reply(post_id: str, payload: ReplyIn, conn=Depends(get_conn)) -> dict:
     text = (payload.text or "").strip()
     if not text:
         raise ApiError("badrequest", "写点什么再发。")
@@ -117,6 +142,8 @@ def add_reply(post_id: str, payload: ReplyIn, conn=Depends(get_conn)) -> dict:
     name = (persona or {}).get("name") or "我"
     pid_ = (persona or {}).get("id") or ""
     reply = db.add_reply(conn, post_id, "persona", pid_, name, text[:500])
+    # 你跟她说话了，她会回一句
+    _kick(moments.character_react(post_id, my_text=text))
     return {"ok": True, "reply": reply}
 
 

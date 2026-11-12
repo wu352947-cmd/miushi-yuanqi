@@ -71,6 +71,12 @@ NPC_EXTRACT_SYSTEM = """从这段对话里，找出「除 {char} 和 {user} 之�
 没有就输出 {{"npcs": []}}"""
 
 
+REACT_SYSTEM = """你是 {char}。你现在在翻朋友圈，看到了下面这件事。
+
+写一句评论：不超过 20 字，用你平时说话的样子。
+口语、短、有情绪。不要解释自己，不要旁白，不要引号，不要写成一整段。
+不要每次都问问题，也不要写「你怎么了」这种试探——你就是随口回一句。"""
+
 COMMENT_SYSTEM = """{char} 发了一条朋友圈：
 
 {post}
@@ -403,6 +409,108 @@ async def npc_post(character_id: str) -> dict[str, Any]:
             locked=True,
         )
     return {"ok": True, "post": post}
+
+
+async def character_react(post_id: str, my_text: str = "") -> dict[str, Any]:
+    """我在朋友圈说话了，她本人接一句。
+
+    两种场景，用同一套流程，只是交代的不同：
+    · 我发了条动态（my_text 为空）→ 她来评论
+    · 我评论了她的动态（my_text 是那句评论）→ 她回我
+
+    她不是 NPC：这是本人开口，所以身份是 character、名字是角色名。
+    """
+    with db.get_db() as conn:
+        row = db.get_post_row(conn, post_id)
+        if not row:
+            return {"ok": False, "message": "这条动态不在了。"}
+        character_id = row["character_id"]
+        post_kind = str(row["author_kind"] or "")
+        post_text = str(row["text"] or "")
+
+        # 同一个帖子下面她最多说两句，多了就变成刷屏
+        said = conn.execute(
+            "SELECT COUNT(*) AS n FROM post_replies "
+            "WHERE post_id = ? AND author_kind = 'character'",
+            (post_id,),
+        ).fetchone()["n"]
+        if said >= 2:
+            return {"ok": False, "message": "这条她已经说过了。", "skipped": True}
+
+        character = db.get_character(conn, character_id) or {}
+        char_name = character.get("name") or "她"
+
+        chat_row = db.get_chat_row(conn, character_id)
+        chat_id = chat_row["id"] if chat_row else ""
+        personas = [
+            db.persona_json(r) for r in conn.execute("SELECT * FROM user_personas").fetchall()
+        ]
+        chat_obj = db.chat_json(conn, chat_row, include_messages=False) if chat_row else {}
+        persona, _ = prompts.resolve_persona(chat_obj, character, personas)
+        user_name = (persona or {}).get("name") or "我"
+
+        desc = ""
+        body = ""
+        if chat_id:
+            _, _, desc, body = _chat_context(conn, chat_id, limit=6)
+
+        model, err = _resolve_model(conn)
+        if not model:
+            return {"ok": False, "message": err or "还没有可用的模型。"}
+        provider_row = db.get_provider_row(conn, model.get("providerId") or "")
+        provider = db.provider_json(provider_row) if provider_row else None
+        api_key = auth.provider_api_key(conn, model.get("providerId") or "")
+
+    if not provider:
+        return {"ok": False, "message": "这个模型的提供商不在列表里了。"}
+
+    if my_text:
+        scene = (
+            "你自己发过一条：\n「" + post_text + "」\n\n"
+            + user_name + " 在下面评论：\n「" + my_text + "」"
+        )
+    elif post_kind == "persona":
+        scene = user_name + " 刚在朋友圈发了一条：\n「" + post_text + "」"
+    else:
+        scene = "朋友圈有人发了：\n「" + post_text + "」"
+
+    parts: list[str] = []
+    if desc:
+        parts.append("你是：" + desc)
+    if body:
+        parts.append("最近发生的事：\n" + body)
+    parts.append(scene)
+    parts.append("写一句评论。只写评论本身。")
+    user_text = "\n\n".join(parts)
+
+    system = REACT_SYSTEM.format(char=char_name)
+    prompt = {
+        "segments": [
+            {"role": "system", "text": system, "kind": "system", "label": "朋友圈回复"},
+            {"role": "user", "text": user_text, "kind": "current", "label": "看到了什么"},
+        ],
+        "system_text": system,
+        "sampling": {"temperature": 0.9, "max_tokens": 120},
+        "text": system + "\n\n" + user_text,
+        "meta": {},
+    }
+    try:
+        result = await providers.complete(
+            provider, model, prompt, api_key, reasoning_level="off", session_id=chat_id
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOG.warning("朋友圈回复失败：%s", str(exc)[:120])
+        return {"ok": False, "message": "这次没回上来。"}
+
+    text = _clean(result.get("text") or "")[:120]
+    if len(text) < 2:
+        LOG.info("朋友圈回复：这次没写出有效内容，跳过")
+        return {"ok": False, "message": "没写出什么。"}
+
+    with db.get_db() as conn:
+        reply = db.add_reply(conn, post_id, "character", character_id, char_name, text)
+    LOG.info("朋友圈：%s 接了一句（%d 字）", char_name, len(text))
+    return {"ok": True, "reply": reply}
 
 
 async def maybe_comment(post_id: str) -> dict[str, Any]:
