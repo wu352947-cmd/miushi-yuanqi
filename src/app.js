@@ -2237,7 +2237,7 @@
     var char = circleChar();
     if (!char) return Promise.resolve();
     var cid = char.id;
-    return serverFetch('/api/moments?character_id=' + encodeURIComponent(cid))
+    return serverFetch('/moments?character_id=' + encodeURIComponent(cid))
       .then(function (res) {
         // 切角色太快时旧请求会晚到，丢掉
         if (circleChar() && circleChar().id === cid) {
@@ -2311,7 +2311,7 @@
     var text = (input && input.value || '').trim();
     if (!char) { toast('先选一个角色。'); return; }
     if (!text) { toast('写点什么再发。'); return; }
-    serverFetch('/api/moments', { method: 'POST', body: { characterId: char.id, text: text } })
+    serverFetch('/moments', { method: 'POST', body: { characterId: char.id, text: text } })
       .then(function () {
         if (input) input.value = '';
         toast('发出去了。');
@@ -2324,7 +2324,7 @@
     var input = document.querySelector('[data-reply-for="' + postId + '"]');
     var text = (input && input.value || '').trim();
     if (!text) return;
-    serverFetch('/api/moments/' + encodeURIComponent(postId) + '/replies', {
+    serverFetch('/moments/' + encodeURIComponent(postId) + '/replies', {
       method: 'POST',
       body: { text: text }
     }).then(function () {
@@ -2334,13 +2334,13 @@
   }
 
   function circleDropPost(postId) {
-    serverFetch('/api/moments/' + encodeURIComponent(postId), { method: 'DELETE' })
+    serverFetch('/moments/' + encodeURIComponent(postId), { method: 'DELETE' })
       .then(function () { toast('删掉了。'); return loadCircle(); })
       .catch(function (err) { toast(err.message || '没删掉。'); });
   }
 
   function circleDropNpc(npcId) {
-    serverFetch('/api/moments/npcs/' + encodeURIComponent(npcId), { method: 'DELETE' })
+    serverFetch('/moments/npcs/' + encodeURIComponent(npcId), { method: 'DELETE' })
       .then(function () { toast('删掉了。'); return loadCircle(); })
       .catch(function (err) { toast(err.message || '没删掉。'); });
   }
@@ -2349,7 +2349,7 @@
     var char = circleChar();
     if (!char) { toast('先选一个角色。'); return; }
     toast('让她想一想…');
-    serverFetch('/api/moments/generate?character_id=' + encodeURIComponent(char.id), {
+    serverFetch('/moments/generate?character_id=' + encodeURIComponent(char.id), {
       method: 'POST',
       body: {}
     }).then(function () {
