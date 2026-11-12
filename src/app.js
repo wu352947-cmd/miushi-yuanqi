@@ -2419,7 +2419,7 @@
             npcs: (res && res.npcs) || [],
             loaded: true
           };
-          renderCircleFeed();
+          renderCircleAll();
         }
         return res;
       })
@@ -2498,6 +2498,21 @@
     });
   }
 
+  /* 同一条动态会同时出现在朋友圈和主页里。只重绘其中一个，
+     另一个就像"点了没反应"——其实库里已经改了。 */
+  function renderCircleAll() {
+    renderCircleFeed();
+    if (profileTarget && document.getElementById('profilePosts')) renderProfile();
+  }
+
+  /* 同一个帖子在两个容器里各有一个输入框，取第一个可能拿到藏起来的那个。
+     优先在正在看的视图里找。 */
+  function replyInput(postId) {
+    var scope = document.querySelector('.view--profile.is-active');
+    var el = scope && scope.querySelector('[data-reply-for="' + postId + '"]');
+    return el || document.querySelector('[data-reply-for="' + postId + '"]');
+  }
+
   function renderCircleFeed() {
     var box = document.getElementById('circleFeed');
     if (!box) return;
@@ -2527,14 +2542,14 @@
 
   function toggleCircleMenu(postId) {
     circleMenuFor = circleMenuFor === postId ? '' : postId;
-    renderCircleFeed();
+    renderCircleAll();
   }
 
   function circleMenuReply(postId) {
     circleMenuFor = '';
     circleReplyFor = postId;
-    renderCircleFeed();
-    var box = document.querySelector('[data-reply-for="' + postId + '"]');
+    renderCircleAll();
+    var box = replyInput(postId);
     if (box) box.focus();
   }
 
@@ -2546,7 +2561,7 @@
       .then(function (res) {
         circleMenuFor = '';
         if (post && res && res.likes) post.likes = res.likes;
-        renderCircleFeed();
+        renderCircleAll();
         toast(liked ? '取消了。' : '赞了。');
       })
       .catch(function (err) { toast(err.message || '没点上。'); });
@@ -2554,9 +2569,9 @@
 
   function toggleCircleReply(postId) {
     circleReplyFor = circleReplyFor === postId ? '' : postId;
-    renderCircleFeed();
+    renderCircleAll();
     if (circleReplyFor) {
-      var el = document.querySelector('[data-reply-for="' + circleReplyFor + '"]');
+      var el = replyInput(circleReplyFor);
       if (el) el.focus();
     }
   }
@@ -2738,7 +2753,7 @@
   }
 
   function circleReply(postId) {
-    var input = document.querySelector('[data-reply-for="' + postId + '"]');
+    var input = replyInput(postId);
     var text = (input && input.value || '').trim();
     if (!text) return;
     serverFetch('/moments/' + encodeURIComponent(postId) + '/replies', {
