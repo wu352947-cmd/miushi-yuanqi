@@ -1983,6 +1983,9 @@
     }, 700);
   }
   function tryProactive() {
+    // 默认关：她只认上下文、没有时间感，隔久了会在原地接着说。
+    // 想让她主动开口，去「设置 → 她会主动开口」打开。
+    if (state.settings.proactiveEnabled !== true) return;
     if (currentView !== 'chat' || chatBusy) return;
     if (!SERVER_MODE || !serverOnline) return;
     var input = document.getElementById('chatInput');
@@ -2486,6 +2489,8 @@
     var s = $('#splashSwitch');
     n.setAttribute('aria-checked', String(!!state.settings.notify));
     s.setAttribute('aria-checked', String(!!state.settings.splashAlways));
+    var pv = $('#proactiveSwitch');
+    if (pv) pv.setAttribute('aria-checked', String(state.settings.proactiveEnabled === true));
     $('#startDate').value = state.settings.startDate;
     $('#settingsThemeValue').textContent = themeLabel(state.theme);
     var font = normalizeChatFont(state.settings.chatFont);
@@ -4182,6 +4187,15 @@
       save();
       renderSettings();
       toast(state.settings.splashAlways ? '以后每次进来都会先看到首页。' : '本次会话只显示一次首页。');
+    });
+    var pvSwitch = $('#proactiveSwitch');
+    if (pvSwitch) pvSwitch.addEventListener('click', function () {
+      state.settings.proactiveEnabled = state.settings.proactiveEnabled !== true;
+      save();
+      renderSettings();
+      toast(state.settings.proactiveEnabled
+        ? '打开了：进聊天页时，如果她刚说完你还没回，她会自己再写一句。'
+        : '关掉了：只在你说话之后她才回应。');
     });
     $('#startDate').addEventListener('change', function (e) {
       var v = e.target.value;
