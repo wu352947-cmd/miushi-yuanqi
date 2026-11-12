@@ -66,11 +66,10 @@ def list_feed(bond_id: str = "", limit: int = 50, conn=Depends(get_conn)) -> dic
     按 bond（角色 × 用户设定）取，不是按角色——换了人设就是另一个世界。
     """
     if not bond_id:
-        return {"ok": True, "posts": [], "npcs": []}
+        return {"ok": True, "posts": []}
     return {
         "ok": True,
         "posts": db.list_posts(conn, bond_id, limit=max(1, min(200, limit))),
-        "npcs": db.list_npcs(conn, bond_id),
     }
 
 
@@ -100,17 +99,6 @@ async def create_post(payload: PostIn, conn=Depends(get_conn)) -> dict:
     return {"ok": True, "post": post}
 
 
-@router.get("/npcs")
-def list_npcs(bond_id: str = "", conn=Depends(get_conn)) -> dict:
-    if not bond_id:
-        return {"ok": True, "npcs": []}
-    return {"ok": True, "npcs": db.list_npcs(conn, bond_id)}
-
-
-@router.delete("/npcs/{npc_id}")
-def drop_npc(npc_id: str, conn=Depends(get_conn)) -> dict:
-    """抽错的 NPC 手动删掉。"""
-    return {"ok": db.delete_npc(conn, npc_id)}
 
 
 @router.post("/generate")
@@ -160,16 +148,6 @@ async def add_reply(post_id: str, payload: ReplyIn, conn=Depends(get_conn)) -> d
 def drop_reply(reply_id: str, conn=Depends(get_conn)) -> dict:
     return {"ok": db.delete_reply(conn, reply_id)}
 
-
-@router.post("/{post_id}/comment")
-async def npc_comment(post_id: str, conn=Depends(get_conn)) -> dict:
-    """手动叫个人来评论（测试/补氛围用）。"""
-    if not db.get_post_row(conn, post_id):
-        raise ApiError("notfound", "这条动态已经不在了。", status=404)
-    result = await moments.maybe_comment(post_id)
-    if not result.get("ok"):
-        raise ApiError("badrequest", str(result.get("message") or "这次没人评论。"))
-    return result
 
 
 # ---------------- 配图 ----------------

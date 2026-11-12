@@ -125,16 +125,6 @@ def test_npc_is_scoped_and_deduped(client):
         assert db.list_npcs(conn, _bond("miao"))[0]["name"] == "小周"
 
 
-def test_bad_npc_is_deletable(client):
-    """抽错了（把地点当成人），用户能删。"""
-    with db.get_db() as conn:
-        npc = db.upsert_npc(conn, _bond("miao"), "miao", "小卖部", "")
-    r = client.delete("/api/moments/npcs/%s" % npc["id"])
-    assert r.status_code == 200
-    assert r.json()["ok"] is True
-    with db.get_db() as conn:
-        assert db.list_npcs(conn, _bond("miao")) == []
-
 
 def test_generate_character_post_and_throttle(client, monkeypatch):
     monkeypatch.setenv("MSYQ_MOCK", "1")
@@ -152,18 +142,6 @@ def test_generate_character_post_and_throttle(client, monkeypatch):
     r2 = client.post("/api/moments/generate?character_id=miao")
     assert r2.status_code == 400
 
-
-def test_npc_extraction_with_mock(client, monkeypatch):
-    monkeypatch.setenv("MSYQ_MOCK", "1")
-    _prime(client)
-    with db.get_db() as conn:
-        row = conn.execute("SELECT id FROM chats WHERE character_id = 'miao'").fetchone()
-    assert row
-    added = asyncio.run(moments.extract_circle_npcs(row["id"]))
-    assert any(n["name"] == "小周" for n in added)
-    # 再抽一次不会重复加
-    again = asyncio.run(moments.extract_circle_npcs(row["id"]))
-    assert again == []
 
 
 def test_prompt_gets_only_self_posts(client, monkeypatch):

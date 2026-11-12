@@ -1840,20 +1840,8 @@
       });
     });
 
-    var npcs = (circleCache.npcs || []).filter(function (n) {
-      return hit(n.name);
-    }).map(function (n) {
-      return {
-        name: n.name,
-        sub: [n.relation, n.note].filter(Boolean).join(' · ') || '剧情里出现过',
-        attr: 'data-wx-npc="' + esc(n.id || n.name) + '" data-name="' + esc(n.name) + '"',
-        ava: wxAva({ name: n.name }, 'wx-row__ava')
-      };
-    });
-
     var html = wxGroupHtml('正在聊的', chatting) +
-      wxGroupHtml('还没聊过', idle) +
-      wxGroupHtml('剧情里的人', npcs);
+      wxGroupHtml('还没聊过', idle);
 
     if (!html) {
       box.innerHTML = '<p class="wx-empty">' +
@@ -1902,12 +1890,6 @@
     document.addEventListener('click', function (e) {
       var tab = e.target.closest('[data-wx-tab]');
       if (tab) { e.preventDefault(); wxTab(tab.getAttribute('data-wx-tab')); return; }
-      var npcRow = e.target.closest('[data-wx-npc]');
-      if (npcRow) {
-        e.preventDefault();
-        openProfile('npc', npcRow.getAttribute('data-wx-npc'), npcRow.getAttribute('data-name'));
-        return;
-      }
       var row = e.target.closest('[data-wx-chat]') || e.target.closest('[data-wx-contact]');
       if (row) {
         e.preventDefault();
@@ -2584,18 +2566,8 @@
     }
     var npcBox = document.getElementById('circleNpcs');
     if (!npcBox) return;
-    var extra = '<div class="wx-actions"><button type="button" data-a2="circle-generate">让她也发一条</button></div>';
-    if (!circleCache.npcs.length) {
-      npcBox.innerHTML = extra;
-      return;
-    }
-    npcBox.innerHTML = extra + '<p class="wx-npcs__title">这个圈子里的人</p>' +
-      circleCache.npcs.map(function (n) {
-        return '<div class="wx-npc">' +
-          '<span class="wx-npc__name">' + esc(n.name) + '</span>' +
-          '<span class="wx-npc__rel">' + esc(n.relation || '') + '</span>' +
-          '<button type="button" data-a2="circle-npc-drop" data-id="' + esc(n.id) + '">删除</button></div>';
-      }).join('');
+    npcBox.innerHTML = '<div class="wx-actions">' +
+      '<button type="button" data-a2="circle-generate">让她也发一条</button></div>';
   }
 
   function toggleCircleMenu(postId) {
@@ -2828,12 +2800,6 @@
     if (!window.confirm('删掉这条动态？删除后不能恢复，配图也会一起删掉。')) return;
     serverFetch('/moments/' + encodeURIComponent(postId), { method: 'DELETE' })
       .then(function () { circleReplyFor = ''; toast('删掉了。'); return loadCircle(); })
-      .catch(function (err) { toast(err.message || '没删掉。'); });
-  }
-
-  function circleDropNpc(npcId) {
-    serverFetch('/moments/npcs/' + encodeURIComponent(npcId), { method: 'DELETE' })
-      .then(function () { toast('删掉了。'); return loadCircle(); })
       .catch(function (err) { toast(err.message || '没删掉。'); });
   }
 
@@ -5730,7 +5696,6 @@
     if (action === 'circle-like') { toggleCircleLike(el.getAttribute('data-id')); return true; }
     if (action === 'circle-reply') { circleReply(el.getAttribute('data-id')); return true; }
     if (action === 'circle-drop') { circleDropPost(el.getAttribute('data-id')); return true; }
-    if (action === 'circle-npc-drop') { circleDropNpc(el.getAttribute('data-id')); return true; }
     if (action === 'circle-generate') { generateCirclePost(); return true; }
     if (action === 'circle-author') {
       openProfile(el.getAttribute('data-kind'), el.getAttribute('data-id'), el.getAttribute('data-name'));

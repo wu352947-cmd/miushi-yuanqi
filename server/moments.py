@@ -32,9 +32,7 @@ LOG = logging.getLogger("msyq")
 
 # 每天最多几条（防止某天突然刷出一堆）
 DAILY_CHARACTER_LIMIT = 1
-DAILY_NPC_LIMIT = 1
 # 她发完，有 NPC 来评论的概率
-COMMENT_CHANCE = 0.4
 # 她评论之后，有多大比例同时点个赞
 LIKE_CHANCE = 0.5
 # 进上下文的条数
@@ -57,21 +55,6 @@ POST_SYSTEM = """你就是 {char}。现在是晚上，你在翻朋友圈，想�
 只输出正文本身。不要引号，不要解释，不要任何前缀。"""
 
 
-NPC_EXTRACT_SYSTEM = """从这段对话里，找出「除 {char} 和 {user} 之外、有名字或明确身份的人」。
-
-只收：
-· 有称呼或名字的：她妈妈、室友小周、班主任李老师、楼下修车的师傅
-· 被明确当作一个人在说话的
-
-不收：
-· 地点和地点里的东西（小卖部、三楼、还书机、那本书）
-· 群体（同学们、路上的行人）
-· 只出现一次、没有任何信息的陌生人
-
-宁可漏，不要收错——错一个，她就多了一个不存在的关系。
-
-输出 JSON：{{"npcs": [{{"name": "小周", "relation": "她的室友"}}]}}
-没有就输出 {{"npcs": []}}"""
 
 
 REACT_SYSTEM = """你是 {char}。你现在在翻朋友圈，看到了下面这件事。
@@ -80,16 +63,6 @@ REACT_SYSTEM = """你是 {char}。你现在在翻朋友圈，看到了下面这�
 口语、短、有情绪。不要解释自己，不要旁白，不要引号，不要写成一整段。
 不要每次都问问题，也不要写「你怎么了」这种试探——你就是随口回一句。"""
 
-COMMENT_SYSTEM = """{char} 发了一条朋友圈：
-
-{post}
-
-你是 {name}，{relation}。
-
-在下面评论一句。口语、短，不超过 25 字。
-可以是关心、调侃、或者一句家常。不要长篇大论，不要解释自己是谁。
-
-只输出这句话本身。"""
 
 
 def _resolve_model(conn):
@@ -216,79 +189,6 @@ def _chat_context(conn, chat_id: str, limit: int = 10) -> tuple[str, str, str, s
     return char_name, user_name, desc, "\n".join(lines)
 
 
-async def extract_circle_npcs(chat_id: str) -> list[dict[str, Any]]:
-    """从最近的对话里抽「她世界里的其他人」。
-
-    只记名字和关系。抽错的由用户手动删——这里不猜。
-    """
-    with db.get_db() as conn:
-        chat = db.chat_full_by_id(conn, chat_id)
-        if not chat:
-            return []
-        character_id = chat.get("characterId") or ""
-        bond_id = _bond_for(conn, character_id, chat.get("personaId") or "")
-        if not bond_id:
-            return []
-        char_name, user_name, _desc, body = _chat_context(conn, chat_id, limit=10)
-        if not body:
-            return []
-        existing = [n["name"] for n in db.list_npcs(conn, bond_id)]
-        model, err = _resolve_model(conn)
-        if not model:
-            return []
-        provider_row = db.get_provider_row(conn, model.get("providerId") or "")
-        provider = db.provider_json(provider_row) if provider_row else None
-        api_key = auth.provider_api_key(conn, model.get("providerId") or "")
-
-    if not provider:
-        return []
-
-    known = "、".join(existing) if existing else "（还没有）"
-    system = NPC_EXTRACT_SYSTEM.format(char=char_name, user=user_name)
-    user_text = "[CIRCLE_NPC]\n已经认识的：" + known + "\n\n对话：\n" + body
-    prompt = {
-        "segments": [
-            {"role": "system", "text": system, "kind": "system", "label": "找出其他人"},
-            {"role": "user", "text": user_text, "kind": "current", "label": "对话"},
-        ],
-        "system_text": system,
-        "sampling": {"temperature": 0.2, "max_tokens": 500},
-        "text": system + "\n\n" + user_text,
-        "meta": {},
-    }
-
-    try:
-        result = await providers.complete(
-            provider, model, prompt, api_key, reasoning_level="off", session_id=chat_id
-        )
-    except Exception as exc:  # noqa: BLE001
-        LOG.warning("朋友圈 NPC 抽取失败：%s", classify_api_error(None, exc, detail=str(exc)).get("message"))
-        return []
-
-    payload = _json_block(result.get("text") or "")
-    if not payload:
-        return []
-
-    added: list[dict[str, Any]] = []
-    with db.get_db() as conn:
-        for item in payload.get("npcs") or []:
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("name") or "").strip()
-            relation = str(item.get("relation") or "").strip()
-            # 简单护栏：名字太长、或者和两个人重名，一律不要
-            if not name or len(name) > 12:
-                continue
-            if name in (char_name, user_name):
-                continue
-            if name in existing:
-                continue
-            npc = db.upsert_npc(conn, bond_id, character_id, name, relation)
-            if npc:
-                added.append(npc)
-                existing.append(name)
-    return added
-
 
 async def compose_character_post(chat_id: str) -> dict[str, Any]:
     """让她发一条朋友圈。发出去即事实（locked），之后谁都不能改。"""
@@ -306,7 +206,6 @@ async def compose_character_post(chat_id: str) -> dict[str, Any]:
         if not body:
             return {"ok": False, "message": "还没有可写的素材。", "skipped": True}
         recent = db.list_posts(conn, bond_id, limit=3)
-        npcs = db.list_npcs(conn, bond_id)
         model, err = _resolve_model(conn)
         if not model:
             return {"ok": False, "message": err or "还没有可用的模型。"}
@@ -321,8 +220,6 @@ async def compose_character_post(chat_id: str) -> dict[str, Any]:
     parts = []
     if desc:
         parts.append("你是谁：" + desc)
-    if npcs:
-        parts.append("你身边有：" + "、".join(n["name"] + "（" + n["relation"] + "）" for n in npcs[:6] if n["relation"]) or "、".join(n["name"] for n in npcs[:6]))
     if recent:
         parts.append("你最近发过：\n" + "\n".join("· " + str(p["text"])[:40] for p in recent))
     parts.append("最近发生的事：\n" + body)
@@ -366,78 +263,6 @@ async def compose_character_post(chat_id: str) -> dict[str, Any]:
     LOG.info("朋友圈：%s 发了一条（%d 字）", char_name, len(text))
     return {"ok": True, "post": post}
 
-
-async def npc_post(chat_id: str) -> dict[str, Any]:
-    """让某个 NPC 发一条。从这个世界的 NPC 里挑。"""
-    with db.get_db() as conn:
-        chat = db.chat_full_by_id(conn, chat_id)
-        if not chat:
-            return {"ok": False, "message": "这段对话不在了。"}
-        character_id = chat.get("characterId") or ""
-        bond_id = _bond_for(conn, character_id, chat.get("personaId") or "")
-        if not bond_id:
-            return {"ok": False, "message": "这段关系还没建立起来。", "skipped": True}
-        npcs = [n for n in db.list_npcs(conn, bond_id) if n.get("relation")]
-        if not npcs:
-            return {"ok": False, "message": "还没有认识的人。", "skipped": True}
-        if _today_count(conn, bond_id, "npc") >= DAILY_NPC_LIMIT:
-            return {"ok": False, "message": "今天 NPC 已经发过了。", "skipped": True}
-        character = db.get_character(conn, character_id) or {}
-        char_name = character.get("name") or "她"
-        recent = db.list_posts(conn, bond_id, limit=4)
-        model, err = _resolve_model(conn)
-        if not model:
-            return {"ok": False, "message": err or "还没有可用的模型。"}
-        provider_row = db.get_provider_row(conn, model.get("providerId") or "")
-        provider = db.provider_json(provider_row) if provider_row else None
-        api_key = auth.provider_api_key(conn, model.get("providerId") or "")
-
-    if not provider:
-        return {"ok": False, "message": "这个模型的提供商不在列表里了。"}
-
-    # 挑一个：优先最近出现过的
-    npc = sorted(npcs, key=lambda n: n.get("lastSeenAt") or "", reverse=True)[0]
-    system = (
-        "你是 " + npc["name"] + "，" + (npc.get("relation") or "她身边的人") + "。\n"
-        "你在发一条朋友圈。可以提到 " + char_name + "，也可以只是自己的生活。"
-    )
-    user_text = "[CIRCLE_NPC_POST] 15 到 50 字，口语，像随手一写。只输出正文。"
-    if recent:
-        user_text += "\n\n最近看到的：" + "；".join(str(p["text"])[:30] for p in recent[:3])
-
-    prompt = {
-        "segments": [
-            {"role": "system", "text": system, "kind": "system", "label": "NPC 发朋友圈"},
-            {"role": "user", "text": user_text, "kind": "current", "label": "要求"},
-        ],
-        "system_text": system,
-        "sampling": {"temperature": 0.95, "max_tokens": 200},
-        "text": system + "\n\n" + user_text,
-        "meta": {},
-    }
-
-    try:
-        result = await providers.complete(provider, model, prompt, api_key, reasoning_level="off")
-    except Exception as exc:  # noqa: BLE001
-        LOG.warning("NPC 发朋友圈失败：%s", str(exc)[:120])
-        return {"ok": False, "message": "生成失败。"}
-
-    text = _clean(result.get("text") or "")
-    if len(text) < 4:
-        return {"ok": False, "message": "没写出什么。"}
-
-    with db.get_db() as conn:
-        post = db.create_post(
-            conn,
-            character_id,
-            "npc",
-            npc["id"],
-            npc["name"],
-            text[:300],
-            source="npc",
-            locked=True,
-        )
-    return {"ok": True, "post": post}
 
 
 async def character_react(post_id: str, my_text: str = "") -> dict[str, Any]:
@@ -545,67 +370,6 @@ async def character_react(post_id: str, my_text: str = "") -> dict[str, Any]:
     return {"ok": True, "reply": reply}
 
 
-async def maybe_comment(post_id: str) -> dict[str, Any]:
-    """她的动态下面，可能有人来评论。概率触发，不是每条都有。"""
-    import random
-
-    if random.random() > COMMENT_CHANCE:
-        return {"ok": False, "message": "这次没人评论。", "skipped": True}
-
-    with db.get_db() as conn:
-        row = db.get_post_row(conn, post_id)
-        if not row:
-            return {"ok": False, "message": "这条动态不在了。"}
-        character_id = row["character_id"]
-        bond_id = str(row["bond_id"] or "")
-        npcs = [n for n in db.list_npcs(conn, bond_id) if n.get("relation")]
-        if not npcs:
-            return {"ok": False, "message": "还没有认识的人。", "skipped": True}
-        character = db.get_character(conn, character_id) or {}
-        char_name = character.get("name") or "她"
-        post_text = str(row["text"] or "")
-        model, err = _resolve_model(conn)
-        if not model:
-            return {"ok": False, "message": err or "还没有可用的模型。"}
-        provider_row = db.get_provider_row(conn, model.get("providerId") or "")
-        provider = db.provider_json(provider_row) if provider_row else None
-        api_key = auth.provider_api_key(conn, model.get("providerId") or "")
-
-    if not provider:
-        return {"ok": False, "message": "这个模型的提供商不在列表里了。"}
-
-    # 挑评论人：优先和这条内容沾边的（名字出现在正文里）
-    hot = [n for n in npcs if n["name"] in post_text]
-    npc = hot[0] if hot else sorted(npcs, key=lambda n: n.get("lastSeenAt") or "")[-1]
-
-    system = COMMENT_SYSTEM.format(
-        char=char_name, post=post_text, name=npc["name"], relation=npc.get("relation") or ""
-    )
-    prompt = {
-        "segments": [
-            {"role": "system", "text": system, "kind": "system", "label": "评论"},
-            {"role": "user", "text": "[CIRCLE_COMMENT] 写一句评论。", "kind": "current", "label": "要求"},
-        ],
-        "system_text": system,
-        "sampling": {"temperature": 0.9, "max_tokens": 120},
-        "text": system,
-        "meta": {},
-    }
-
-    try:
-        result = await providers.complete(provider, model, prompt, api_key, reasoning_level="off")
-    except Exception as exc:  # noqa: BLE001
-        LOG.warning("朋友圈评论失败：%s", str(exc)[:120])
-        return {"ok": False, "message": "生成失败。"}
-
-    text = _clean(result.get("text") or "")[:120]
-    if len(text) < 2:
-        return {"ok": False, "message": "没写出什么。"}
-
-    with db.get_db() as conn:
-        reply = db.add_reply(conn, post_id, "npc", npc["id"], npc["name"], text)
-    return {"ok": True, "reply": reply}
-
 
 def schedule_after_reply(chat_id: str, force: bool = False) -> None:
     """聊天结束后异步跑：抽 NPC → 她发朋友圈 → 也许有人评论。
@@ -615,11 +379,7 @@ def schedule_after_reply(chat_id: str, force: bool = False) -> None:
 
     async def _run() -> None:
         try:
-            await extract_circle_npcs(chat_id)
             made = await compose_character_post(chat_id)
-            if made.get("ok") and made.get("post"):
-                await maybe_comment(made["post"]["id"])
-            await npc_post(chat_id)
         except Exception:  # noqa: BLE001
             LOG.exception("朋友圈后台任务出错")
 
