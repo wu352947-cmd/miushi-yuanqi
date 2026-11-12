@@ -881,6 +881,14 @@ async def complete(
                 break
         if "MEMORY_EXTRACT" in last_user:
             return {"text": _mock_extract_json(last_user), "usage": None, "thinking": ""}
+        if "[CIRCLE_NPC]" in last_user:
+            return {"text": '{"npcs": [{"name": "小周", "relation": "她的室友"}]}', "usage": None, "thinking": ""}
+        if "[CIRCLE_NPC_POST]" in last_user:
+            return {"text": "这个季节的橘子便宜得离谱，买了两斤。", "usage": None, "thinking": ""}
+        if "[CIRCLE_POST]" in last_user:
+            return {"text": "今天把借了很久的那本书看完了，窗外的雨下了一整天。", "usage": None, "thinking": ""}
+        if "[CIRCLE_COMMENT]" in last_user:
+            return {"text": "这么晚还不睡？", "usage": None, "thinking": ""}
         if "CONTEXT_DIGEST" in last_user:
             return {"text": _mock_digest_text(), "usage": None, "thinking": ""}
         text, _thinking = _mock_reply(prompt)

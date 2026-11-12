@@ -20,7 +20,7 @@ from typing import Any, AsyncIterator
 from fastapi import APIRouter, Body, Depends
 from fastapi.responses import StreamingResponse
 
-from .. import auth, db, digest as digest_mod, memory, prompts, providers, usage as usage_mod
+from .. import auth, db, digest as digest_mod, memory, moments, prompts, providers, usage as usage_mod
 from ..errors import ApiError, classify_api_error
 from ..reasoning import build_reasoning_params, default_level
 from ..schemas import (
@@ -108,6 +108,8 @@ def _load_context(
             "author_note": author_note,
             "digest": db.get_digest(conn, ((chat or {}).get("id") or "")),
             "context_budget": int((config.get("settings") or {}).get("contextBudget") or 0),
+            # 只要「她和我」发的最近几条：NPC 的动态不进她的上下文
+            "posts": moments.recent_for_prompt(conn, character.get("id") or ""),
         }
     )
     return {
@@ -851,6 +853,9 @@ async def send_message(character_id: str, payload: ChatSendIn, conn=Depends(get_
                 # 那她说的细节就永远进不了记忆库 —— 下次再编就对不上了
                 force=(mode == "proactive"),
             )
+            # 朋友圈：抽 NPC → 她发一条 → 也许有人评论 → NPC 发一条。
+            # 内部有每日上限，超额时直接跳过，不调模型。
+            moments.schedule_after_reply(str((ctx.get("chat") or {}).get("id") or ""))
 
     return StreamingResponse(
         generator(),

@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - 兜底
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 # --------------------------------------------------------------------------- 路径
@@ -353,9 +353,50 @@ SCHEMA: list[str] = [
       updated_at TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS posts (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL DEFAULT '',
+      bond_id TEXT NOT NULL DEFAULT '',
+      author_kind TEXT NOT NULL DEFAULT 'character',
+      author_id TEXT NOT NULL DEFAULT '',
+      author_name TEXT NOT NULL DEFAULT '',
+      text TEXT NOT NULL DEFAULT '',
+      at TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL DEFAULT 'manual',
+      locked INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS post_replies (
+      id TEXT PRIMARY KEY,
+      post_id TEXT NOT NULL,
+      author_kind TEXT NOT NULL DEFAULT 'character',
+      author_id TEXT NOT NULL DEFAULT '',
+      author_name TEXT NOT NULL DEFAULT '',
+      text TEXT NOT NULL DEFAULT '',
+      at TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS circle_npcs (
+      id TEXT PRIMARY KEY,
+      character_id TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL DEFAULT '',
+      relation TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      last_seen_at TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    )
+    """,
     "CREATE INDEX IF NOT EXISTS idx_usage_at ON usage(at)",
     "CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model_id)",
     "CREATE INDEX IF NOT EXISTS idx_usage_char ON usage(character_id)",
+    "CREATE INDEX IF NOT EXISTS idx_posts_char ON posts(character_id, at)",
+    "CREATE INDEX IF NOT EXISTS idx_replies_post ON post_replies(post_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_npcs_char ON circle_npcs(character_id)",
     "CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, id)",
     "CREATE INDEX IF NOT EXISTS idx_entries_book ON world_book_entries(book_id, ord)",
     "CREATE INDEX IF NOT EXISTS idx_chats_char ON chats(character_id)",
@@ -1781,4 +1822,185 @@ def save_digest(
 
 def delete_digest(conn, chat_id: str) -> bool:
     cur = conn.execute("DELETE FROM chat_digests WHERE chat_id = ?", (chat_id,))
+    return cur.rowcount > 0
+
+
+# ---------- 朋友圈 ----------
+# 所有查询都按 character_id 过滤：每个角色的朋友圈是独立世界，
+# 换角色就换一整个世界，NPC 也不共用。
+
+
+def post_json(row, replies=None) -> dict[str, Any]:
+    out = {
+        "id": row["id"],
+        "characterId": row["character_id"],
+        "bondId": row["bond_id"],
+        "authorKind": row["author_kind"],
+        "authorId": row["author_id"],
+        "authorName": row["author_name"],
+        "text": row["text"],
+        "at": row["at"],
+        "source": row["source"],
+        "locked": bool(row["locked"]),
+        "createdAt": row["created_at"],
+        "replies": replies or [],
+    }
+    return out
+
+
+def reply_json(row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "postId": row["post_id"],
+        "authorKind": row["author_kind"],
+        "authorId": row["author_id"],
+        "authorName": row["author_name"],
+        "text": row["text"],
+        "at": row["at"],
+        "createdAt": row["created_at"],
+    }
+
+
+def npc_json(row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "characterId": row["character_id"],
+        "name": row["name"],
+        "relation": row["relation"],
+        "note": row["note"],
+        "lastSeenAt": row["last_seen_at"],
+        "createdAt": row["created_at"],
+    }
+
+
+def list_posts(conn, character_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT * FROM posts WHERE character_id = ? ORDER BY at DESC, created_at DESC LIMIT ?",
+        (character_id, int(limit)),
+    ).fetchall()
+    if not rows:
+        return []
+    ids = [r["id"] for r in rows]
+    marks = ",".join("?" * len(ids))
+    replies: dict[str, list] = {}
+    for rr in conn.execute(
+        "SELECT * FROM post_replies WHERE post_id IN (" + marks + ") ORDER BY created_at ASC",
+        ids,
+    ).fetchall():
+        replies.setdefault(rr["post_id"], []).append(reply_json(rr))
+    return [post_json(r, replies.get(r["id"], [])) for r in rows]
+
+
+def get_post_row(conn, post_id: str):
+    return conn.execute("SELECT * FROM posts WHERE id = ?", (post_id,)).fetchone()
+
+
+def create_post(
+    conn,
+    character_id: str,
+    author_kind: str,
+    author_id: str,
+    author_name: str,
+    text: str,
+    at: str = "",
+    source: str = "manual",
+    bond_id: str = "",
+    locked: bool = False,
+) -> dict[str, Any]:
+    pid = new_id("post")
+    now = now_iso()
+    conn.execute(
+        "INSERT INTO posts (id, character_id, bond_id, author_kind, author_id, "
+        "author_name, text, at, source, locked, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            pid,
+            character_id,
+            bond_id,
+            author_kind,
+            author_id,
+            author_name,
+            text,
+            at or now,
+            source,
+            1 if locked else 0,
+            now,
+        ),
+    )
+    return post_json(get_post_row(conn, pid), [])
+
+
+def delete_post(conn, post_id: str) -> bool:
+    cur = conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+    conn.execute("DELETE FROM post_replies WHERE post_id = ?", (post_id,))
+    return cur.rowcount > 0
+
+
+def add_reply(
+    conn,
+    post_id: str,
+    author_kind: str,
+    author_id: str,
+    author_name: str,
+    text: str,
+    at: str = "",
+) -> dict[str, Any]:
+    rid = new_id("rpl")
+    now = now_iso()
+    conn.execute(
+        "INSERT INTO post_replies (id, post_id, author_kind, author_id, author_name, "
+        "text, at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (rid, post_id, author_kind, author_id, author_name, text, at or now, now),
+    )
+    row = conn.execute("SELECT * FROM post_replies WHERE id = ?", (rid,)).fetchone()
+    return reply_json(row)
+
+
+def delete_reply(conn, reply_id: str) -> bool:
+    cur = conn.execute("DELETE FROM post_replies WHERE id = ?", (reply_id,))
+    return cur.rowcount > 0
+
+
+def list_npcs(conn, character_id: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT * FROM circle_npcs WHERE character_id = ? ORDER BY created_at ASC",
+        (character_id,),
+    ).fetchall()
+    return [npc_json(r) for r in rows]
+
+
+def upsert_npc(
+    conn, character_id: str, name: str, relation: str = "", note: str = "", seen_at: str = ""
+) -> dict[str, Any] | None:
+    """按名字去重：同一个角色世界里，同名 NPC 只留一条。
+
+    抽错的 NPC（把地点当成人）由用户手动删，不在这里猜。
+    """
+    name = (name or "").strip()
+    if not name:
+        return None
+    row = conn.execute(
+        "SELECT * FROM circle_npcs WHERE character_id = ? AND name = ?",
+        (character_id, name),
+    ).fetchone()
+    now = now_iso()
+    if row:
+        conn.execute(
+            "UPDATE circle_npcs SET relation = ?, note = ?, last_seen_at = ? WHERE id = ?",
+            (relation or row["relation"], note or row["note"], seen_at or now, row["id"]),
+        )
+        row = conn.execute("SELECT * FROM circle_npcs WHERE id = ?", (row["id"],)).fetchone()
+        return npc_json(row)
+    nid = new_id("npc")
+    conn.execute(
+        "INSERT INTO circle_npcs (id, character_id, name, relation, note, last_seen_at, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (nid, character_id, name, relation, note, seen_at or now, now),
+    )
+    row = conn.execute("SELECT * FROM circle_npcs WHERE id = ?", (nid,)).fetchone()
+    return npc_json(row)
+
+
+def delete_npc(conn, npc_id: str) -> bool:
+    cur = conn.execute("DELETE FROM circle_npcs WHERE id = ?", (npc_id,))
     return cur.rowcount > 0

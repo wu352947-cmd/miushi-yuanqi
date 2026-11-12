@@ -187,3 +187,12 @@ class ChatCompressIn(BaseModel):
 
 class ChatDigestPatch(BaseModel):
     text: str
+
+
+class PostIn(BaseModel):
+    characterId: str
+    text: str
+
+
+class ReplyIn(BaseModel):
+    text: str

@@ -275,6 +275,21 @@ def assemble(context: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
+    # 朋友圈：只要「她和我」发的，NPC 的不带——路人说的话和她是谁无关。
+    circle = context.get("posts") or []
+    if circle:
+        blocks.append(
+            {
+                "kind": "circle",
+                "label": "朋友圈 · 最近发过的",
+                "role": "system",
+                "text": "\n".join(
+                    "· " + str(p.get("author") or "") + "（" + str(p.get("at") or "") + "）："
+                    + str(p.get("text") or "")
+                    for p in circle
+                ),
+            }
+        )
     # 前情摘要：比这段更早的对话已经折叠成一条，替它记住那些事。
     # 消息本体一条没删，只是不再发出去——所以随时可以撤销重来。
     digest = context.get("digest") or {}

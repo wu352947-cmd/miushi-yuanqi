@@ -111,7 +111,7 @@ def test_schema_v3_migration_adds_edited_column(tmp_path, monkeypatch):
         row = conn.execute("SELECT * FROM messages WHERE chat_id = 'chat-old'").fetchone()
         chat = conn.execute("SELECT * FROM chats WHERE id = 'chat-old'").fetchone()
     assert "edited" in columns
-    assert version == 5  # v5：新增 chat_digests（上下文压缩摘要）
+    assert version == 6  # v6：新增 chat_digests（上下文压缩摘要）
     assert row["text"] == "旧消息"
     assert row["edited"] == 0
     assert chat["title"] == "旧对话"
