@@ -1043,6 +1043,7 @@ button.wx-post__avatar {
   cursor: pointer;
 }
 .wx-post__menu button + button { border-left: 1px solid rgba(0, 0, 0, .08); }
+.wx-post__menu button.is-danger { color: #d9534f; }
 
 /* ---------- 朋友圈配图 ---------- */
 /* 微信是九宫格：1 张给大图，2 张两列，3 张以上三列，全部正方裁切。 */

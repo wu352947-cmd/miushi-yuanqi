@@ -2471,6 +2471,7 @@
                 (likedByMe ? '取消' : '赞') +
               '</button>' +
               '<button type="button" data-a2="circle-menu-reply" data-id="' + esc(post.id) + '">评论</button>' +
+              '<button class="is-danger" type="button" data-a2="circle-drop" data-id="' + esc(post.id) + '">删除</button>' +
             '</div>'
           : '') +
         ((likes.length || replies)
@@ -2480,7 +2481,6 @@
           ? '<div class="wx-post__reply">' +
               '<input type="text" maxlength="200" placeholder="评论" data-reply-for="' + esc(post.id) + '" aria-label="评论">' +
               '<button type="button" data-a2="circle-reply" data-id="' + esc(post.id) + '">发送</button>' +
-              '<button class="is-ghost" type="button" data-a2="circle-drop" data-id="' + esc(post.id) + '">删除</button>' +
             '</div>'
           : '') +
       '</div>' +
@@ -2767,6 +2767,7 @@
   }
 
   function circleDropPost(postId) {
+    if (!window.confirm('删掉这条动态？删除后不能恢复，配图也会一起删掉。')) return;
     serverFetch('/moments/' + encodeURIComponent(postId), { method: 'DELETE' })
       .then(function () { circleReplyFor = ''; toast('删掉了。'); return loadCircle(); })
       .catch(function (err) { toast(err.message || '没删掉。'); });
