@@ -180,10 +180,49 @@
           </div>
         </section>
 
+        <!-- ①.5 聊天主界面（微信式） -->
+        <section class="view view--wx" data-view="wx" aria-label="聊天">
+          <header class="wx-appbar">
+            <button class="wx-appbar__back" type="button" data-nav="home" aria-label="返回首页">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M12.4 4.6 7 10l5.4 5.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <h1 class="wx-appbar__title" id="wxTitle">微信</h1>
+            <span class="wx-appbar__spacer" aria-hidden="true"></span>
+          </header>
+
+          <div class="wx-body">
+            <div class="wx-panel" data-wx-panel="chats">
+              <div class="wx-rows" id="wxChatList"></div>
+            </div>
+            <div class="wx-panel" data-wx-panel="contacts" hidden>
+              <div class="wx-rows" id="wxContacts"></div>
+            </div>
+          </div>
+
+          <nav class="wx-tabbar" aria-label="聊天导航">
+            <button class="wx-tab is-on" type="button" data-wx-tab="chats" aria-current="true">
+              <span class="wx-tab__ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4.8c4.2 0 7.6 2.7 7.6 6.1 0 3.4-3.4 6.1-7.6 6.1-.9 0-1.7-.1-2.5-.3l-3.4 2.2.8-2.8c-1.5-1.1-2.5-2.7-2.5-4.5 0-3.4 3.4-6.1 7.6-6.1z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+              <span class="wx-tab__label">微信</span>
+            </button>
+            <button class="wx-tab" type="button" data-wx-tab="contacts" aria-current="false">
+              <span class="wx-tab__ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="9.4" cy="9" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3.8 19c.7-3 2.8-4.6 5.6-4.6s4.9 1.6 5.6 4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M16.2 7.6c1.5.3 2.5 1.5 2.5 3s-1 2.7-2.5 3M17.6 14.6c1.9.5 3.1 1.9 3.5 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity=".75"/></svg></span>
+              <span class="wx-tab__label">通讯录</span>
+            </button>
+            <button class="wx-tab" type="button" data-nav="circle" aria-label="发现">
+              <span class="wx-tab__ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.5"/><path d="M15.2 8.8 13.4 13.4 8.8 15.2l1.8-4.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
+              <span class="wx-tab__label">发现</span>
+            </button>
+            <button class="wx-tab" type="button" data-nav="me" aria-label="我">
+              <span class="wx-tab__ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8.4" r="3.4" stroke="currentColor" stroke-width="1.5"/><path d="M5.4 19.4c.8-3.3 3.2-5.1 6.6-5.1s5.8 1.8 6.6 5.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+              <span class="wx-tab__label">我</span>
+            </button>
+          </nav>
+        </section>
+
         <!-- ② 聊天 -->
         <section class="view view--chat" data-view="chat" aria-label="聊天">
           <header class="chatbar">
-            <button class="round-btn" type="button" data-nav="home" aria-label="返回首页">
+            <button class="round-btn" type="button" data-nav="wx" aria-label="返回聊天列表">
               <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M12.4 4.6 7 10l5.4 5.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <button class="chatbar__id" type="button" data-open="characterSwitch" aria-haspopup="dialog" aria-label="切换正在说话的角色">
@@ -317,7 +356,7 @@
         <!-- ④ 一起听 -->
         <section class="view view--circle" data-view="circle" aria-label="朋友圈">
           <div class="wx-nav">
-            <button class="wx-nav__back" type="button" data-nav="home" aria-label="返回">
+            <button class="wx-nav__back" type="button" data-nav="wx" aria-label="返回">
               <svg viewBox="0 0 24 24" fill="none" width="22" height="22"><path d="M14.5 5.5 8 12l6.5 6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <span class="wx-nav__title">朋友圈</span>
@@ -680,7 +719,7 @@
 
       <div class="error-layer" id="errorLayer" aria-live="assertive"></div>
       <nav class="tabbar" id="tabbar" aria-label="主导航">
-        <button class="tab" type="button" data-nav="chat" aria-current="false">
+        <button class="tab" type="button" data-nav="wx" aria-current="false">
           <span class="tab__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4.6c4.3 0 7.7 2.8 7.7 6.2 0 3.4-3.4 6.2-7.7 6.2-.8 0-1.6-.1-2.3-.3l-3.5 2.3.8-2.9c-1.5-1.1-2.4-2.7-2.4-4.5 0-3.4 3-6.2 7.4-6.2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
           <span class="tab__label">聊天</span>
         </button>

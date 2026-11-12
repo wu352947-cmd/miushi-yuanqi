@@ -13,7 +13,7 @@
   var rawLocalSnapshot = null; /* 迁移用：file:// 或旧浏览器里的原始存档 */
   var SESSION_KEY = 'msyq.entered';
   var THEME_ORDER = ['pink', 'ice'];
-  var NO_TAB_VIEWS = ['chat', 'characters', 'personas', 'books', 'providers', 'presets', 'stats'];
+  var NO_TAB_VIEWS = ['wx', 'chat', 'characters', 'personas', 'books', 'providers', 'presets', 'stats'];
 
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
@@ -814,6 +814,7 @@
 
   function renderAfterServerRefresh() {
     applyTheme(state.theme);
+    renderWx();
     renderHome();
     renderMemories();
     renderMe();
@@ -1622,6 +1623,7 @@
     if (view === 'chat') {
       try { sessionStorage.setItem(SESSION_KEY, '1'); } catch (e) { /* 忽略 */ }
     }
+    if (view === 'wx') renderWx();
     go(view);
   }
 
@@ -1720,6 +1722,125 @@
       avatarHTML(rpMe && rpMe.persona, 'avatar avatar--me msg__avatar') +
     '</div>';
   }
+
+  /* ---------- 聊天主界面（微信式） ---------- */
+  /* 这一层只做「把人和对话摊开」。
+     微信 = 有对话往来的人；通讯录 = 所有角色，包括还没聊过的。 */
+  var wxTabName = 'chats';
+
+  function wxAva(person, cls) {
+    var has = !!(person && person.avatar);
+    return '<span class="avatar ' + (cls || '') + (has ? ' avatar--img' : ' avatar--ai') + '">' +
+      (has ? '<img src="' + esc(person.avatar) + '" alt="">' : esc(initialOf(person) || '')) +
+      '</span>';
+  }
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  function wxListTime(at) {
+    if (!at) return '';
+    var d = new Date(at);
+    if (isNaN(d.getTime())) return '';
+    var now = new Date();
+    if (d.toDateString() === now.toDateString()) return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    var y = new Date(now.getTime() - 86400000);
+    if (d.toDateString() === y.toDateString()) return '昨天';
+    return (d.getMonth() + 1) + '/' + d.getDate();
+  }
+
+  function renderWxChats() {
+    var box = document.getElementById('wxChatList');
+    if (!box) return;
+    var rows = (state.characters || []).map(function (c) {
+      var chat = state.chats[c.id];
+      if (!chat) return null;
+      var msgs = chat.messages || [];
+      var last = msgs.length ? msgs[msgs.length - 1] : null;
+      var preview = String((last && last.text) || c.first_mes || '').replace(/\s+/g, ' ');
+      return {
+        id: c.id,
+        name: c.name,
+        avatar: c.avatar,
+        preview: preview.slice(0, 40),
+        at: chat.lastAt || ''
+      };
+    }).filter(Boolean);
+
+    rows.sort(function (a, b) { return String(b.at || '').localeCompare(String(a.at || '')); });
+
+    if (!rows.length) {
+      box.innerHTML = '<p class="wx-empty">还没有对话。<br>去通讯录里找一个开始。</p>';
+      return;
+    }
+    box.innerHTML = rows.map(function (r) {
+      return '<button class="wx-row" type="button" data-wx-chat="' + esc(r.id) + '">' +
+        wxAva(r, 'wx-row__ava') +
+        '<span class="wx-row__main">' +
+          '<span class="wx-row__top">' +
+            '<span class="wx-row__name">' + esc(r.name) + '</span>' +
+            '<span class="wx-row__time">' + esc(wxListTime(r.at)) + '</span>' +
+          '</span>' +
+          '<span class="wx-row__sub">' + esc(r.preview || '还没有消息') + '</span>' +
+        '</span>' +
+      '</button>';
+    }).join('');
+  }
+
+  function renderWxContacts() {
+    var box = document.getElementById('wxContacts');
+    if (!box) return;
+    var chars = (state.characters || []).slice().sort(function (a, b) {
+      return String(a.name || '').localeCompare(String(b.name || ''), 'zh');
+    });
+    if (!chars.length) {
+      box.innerHTML = '<p class="wx-empty">还没有角色。</p>';
+      return;
+    }
+    box.innerHTML = chars.map(function (c) {
+      return '<button class="wx-row" type="button" data-wx-contact="' + esc(c.id) + '">' +
+        wxAva(c, 'wx-row__ava') +
+        '<span class="wx-row__main">' +
+          '<span class="wx-row__top"><span class="wx-row__name">' + esc(c.name) + '</span></span>' +
+          '<span class="wx-row__sub">' + esc(String(c.desc || '').slice(0, 34)) + '</span>' +
+        '</span>' +
+      '</button>';
+    }).join('');
+  }
+
+  function renderWx() {
+    var title = document.getElementById('wxTitle');
+    if (title) title.textContent = wxTabName === 'chats' ? '微信' : '通讯录';
+    $$('.wx-panel').forEach(function (p) {
+      p.hidden = p.getAttribute('data-wx-panel') !== wxTabName;
+    });
+    $$('.wx-tab[data-wx-tab]').forEach(function (t) {
+      var on = t.getAttribute('data-wx-tab') === wxTabName;
+      t.classList.toggle('is-on', on);
+      t.setAttribute('aria-current', String(on));
+    });
+    renderWxChats();
+    renderWxContacts();
+  }
+
+  function wxTab(name) {
+    wxTabName = name;
+    renderWx();
+    var body = document.querySelector('.wx-body');
+    if (body) body.scrollTop = 0;
+  }
+
+  (function bindWx() {
+    document.addEventListener('click', function (e) {
+      var tab = e.target.closest('[data-wx-tab]');
+      if (tab) { e.preventDefault(); wxTab(tab.getAttribute('data-wx-tab')); return; }
+      var row = e.target.closest('[data-wx-chat]') || e.target.closest('[data-wx-contact]');
+      if (row) {
+        e.preventDefault();
+        var id = row.getAttribute('data-wx-chat') || row.getAttribute('data-wx-contact');
+        if (id) startChatWith(id);
+      }
+    });
+  })();
 
   function renderChat() {
     var list = $('#chatList');

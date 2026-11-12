@@ -712,6 +712,155 @@ html[data-theme="ice"] .tabbar { background: linear-gradient(180deg, rgba(252, 2
    灵动岛就因为这个一直挂着「0% 上下文快满了」，看着像卡住了。 */
 [hidden] { display: none !important; }
 
+/* ---------- 聊天主界面（微信式） ---------- */
+/* 微信那套的结构：列表白底、灰分隔线、次要信息灰字、
+   底栏四格等分。颜色沿用主题色，不硬套微信绿。 */
+.view--wx {
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+}
+
+.wx-appbar {
+  flex: none;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  background: #ededed;
+  border-bottom: 1px solid rgba(0, 0, 0, .06);
+}
+.wx-appbar__back {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #333;
+  cursor: pointer;
+}
+.wx-appbar__back svg { width: 19px; height: 19px; }
+.wx-appbar__title {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  font-family: var(--serif);
+  font-size: 16.5px;
+  font-weight: 600;
+  color: #111;
+}
+.wx-appbar__spacer { width: 34px; flex: none; }
+
+.wx-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+}
+.wx-panel[hidden] { display: none; }
+
+.wx-rows { background: #fff; }
+
+.wx-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 16px;
+  border: 0;
+  background: #fff;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.wx-row + .wx-row { border-top: 1px solid rgba(0, 0, 0, .045); }
+.wx-row:active { background: #f2f2f2; }
+
+.wx-row__ava {
+  width: 46px;
+  height: 46px;
+  border-radius: 5px;
+  flex: none;
+  font-size: 17px;
+}
+.wx-row__main { flex: 1; min-width: 0; }
+.wx-row__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.wx-row__name {
+  font-family: var(--serif);
+  font-size: 16.5px;
+  color: #111;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wx-row__time { font-size: 11.5px; color: #b2b2b2; flex: none; }
+.wx-row__sub {
+  margin-top: 3px;
+  font-size: 13.5px;
+  color: #9a9a9a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wx-rows__head {
+  padding: 6px 16px;
+  font-size: 12.5px;
+  color: #8a8a8a;
+  background: #f7f7f7;
+}
+
+.wx-empty {
+  padding: 40px 20px;
+  text-align: center;
+  font-size: 13.5px;
+  color: #a8a8a8;
+  line-height: 1.9;
+}
+
+.wx-tabbar {
+  flex: none;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  height: 54px;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: #f7f7f7;
+  border-top: 1px solid rgba(0, 0, 0, .07);
+}
+.wx-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  color: #7a7a7a;
+  font: inherit;
+  cursor: pointer;
+  transition: color .18s ease;
+}
+.wx-tab.is-on { color: var(--pink-deep); }
+.wx-tab__ico svg {
+  width: 23px;
+  height: 23px;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.wx-tab__label { font-size: 10.5px; letter-spacing: .02em; }
+
 /* ---------- 朋友圈点赞 ---------- */
 /* 微信：互动区第一行是「♡ 名字」，名字蓝色，点赞和评论之间有一条浅分线。 */
 .wx-post__likes {

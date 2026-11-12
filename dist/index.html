@@ -2666,6 +2666,155 @@ html[data-theme="ice"] .tabbar { background: linear-gradient(180deg, rgba(252, 2
    灵动岛就因为这个一直挂着「0% 上下文快满了」，看着像卡住了。 */
 [hidden] { display: none !important; }
 
+/* ---------- 聊天主界面（微信式） ---------- */
+/* 微信那套的结构：列表白底、灰分隔线、次要信息灰字、
+   底栏四格等分。颜色沿用主题色，不硬套微信绿。 */
+.view--wx {
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+}
+
+.wx-appbar {
+  flex: none;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  background: #ededed;
+  border-bottom: 1px solid rgba(0, 0, 0, .06);
+}
+.wx-appbar__back {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #333;
+  cursor: pointer;
+}
+.wx-appbar__back svg { width: 19px; height: 19px; }
+.wx-appbar__title {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  font-family: var(--serif);
+  font-size: 16.5px;
+  font-weight: 600;
+  color: #111;
+}
+.wx-appbar__spacer { width: 34px; flex: none; }
+
+.wx-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+}
+.wx-panel[hidden] { display: none; }
+
+.wx-rows { background: #fff; }
+
+.wx-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 16px;
+  border: 0;
+  background: #fff;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.wx-row + .wx-row { border-top: 1px solid rgba(0, 0, 0, .045); }
+.wx-row:active { background: #f2f2f2; }
+
+.wx-row__ava {
+  width: 46px;
+  height: 46px;
+  border-radius: 5px;
+  flex: none;
+  font-size: 17px;
+}
+.wx-row__main { flex: 1; min-width: 0; }
+.wx-row__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.wx-row__name {
+  font-family: var(--serif);
+  font-size: 16.5px;
+  color: #111;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wx-row__time { font-size: 11.5px; color: #b2b2b2; flex: none; }
+.wx-row__sub {
+  margin-top: 3px;
+  font-size: 13.5px;
+  color: #9a9a9a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wx-rows__head {
+  padding: 6px 16px;
+  font-size: 12.5px;
+  color: #8a8a8a;
+  background: #f7f7f7;
+}
+
+.wx-empty {
+  padding: 40px 20px;
+  text-align: center;
+  font-size: 13.5px;
+  color: #a8a8a8;
+  line-height: 1.9;
+}
+
+.wx-tabbar {
+  flex: none;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  height: 54px;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: #f7f7f7;
+  border-top: 1px solid rgba(0, 0, 0, .07);
+}
+.wx-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  color: #7a7a7a;
+  font: inherit;
+  cursor: pointer;
+  transition: color .18s ease;
+}
+.wx-tab.is-on { color: var(--pink-deep); }
+.wx-tab__ico svg {
+  width: 23px;
+  height: 23px;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.wx-tab__label { font-size: 10.5px; letter-spacing: .02em; }
+
 /* ---------- 朋友圈点赞 ---------- */
 /* 微信：互动区第一行是「♡ 名字」，名字蓝色，点赞和评论之间有一条浅分线。 */
 .wx-post__likes {
@@ -5475,10 +5624,49 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
           </div>
         </section>
 
+        <!-- ①.5 聊天主界面（微信式） -->
+        <section class="view view--wx" data-view="wx" aria-label="聊天">
+          <header class="wx-appbar">
+            <button class="wx-appbar__back" type="button" data-nav="home" aria-label="返回首页">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M12.4 4.6 7 10l5.4 5.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <h1 class="wx-appbar__title" id="wxTitle">微信</h1>
+            <span class="wx-appbar__spacer" aria-hidden="true"></span>
+          </header>
+
+          <div class="wx-body">
+            <div class="wx-panel" data-wx-panel="chats">
+              <div class="wx-rows" id="wxChatList"></div>
+            </div>
+            <div class="wx-panel" data-wx-panel="contacts" hidden>
+              <div class="wx-rows" id="wxContacts"></div>
+            </div>
+          </div>
+
+          <nav class="wx-tabbar" aria-label="聊天导航">
+            <button class="wx-tab is-on" type="button" data-wx-tab="chats" aria-current="true">
+              <span class="wx-tab__ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4.8c4.2 0 7.6 2.7 7.6 6.1 0 3.4-3.4 6.1-7.6 6.1-.9 0-1.7-.1-2.5-.3l-3.4 2.2.8-2.8c-1.5-1.1-2.5-2.7-2.5-4.5 0-3.4 3.4-6.1 7.6-6.1z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+              <span class="wx-tab__label">微信</span>
+            </button>
+            <button class="wx-tab" type="button" data-wx-tab="contacts" aria-current="false">
+              <span class="wx-tab__ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="9.4" cy="9" r="3.2" stroke="currentColor" stroke-width="1.5"/><path d="M3.8 19c.7-3 2.8-4.6 5.6-4.6s4.9 1.6 5.6 4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M16.2 7.6c1.5.3 2.5 1.5 2.5 3s-1 2.7-2.5 3M17.6 14.6c1.9.5 3.1 1.9 3.5 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity=".75"/></svg></span>
+              <span class="wx-tab__label">通讯录</span>
+            </button>
+            <button class="wx-tab" type="button" data-nav="circle" aria-label="发现">
+              <span class="wx-tab__ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.5"/><path d="M15.2 8.8 13.4 13.4 8.8 15.2l1.8-4.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
+              <span class="wx-tab__label">发现</span>
+            </button>
+            <button class="wx-tab" type="button" data-nav="me" aria-label="我">
+              <span class="wx-tab__ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8.4" r="3.4" stroke="currentColor" stroke-width="1.5"/><path d="M5.4 19.4c.8-3.3 3.2-5.1 6.6-5.1s5.8 1.8 6.6 5.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+              <span class="wx-tab__label">我</span>
+            </button>
+          </nav>
+        </section>
+
         <!-- ② 聊天 -->
         <section class="view view--chat" data-view="chat" aria-label="聊天">
           <header class="chatbar">
-            <button class="round-btn" type="button" data-nav="home" aria-label="返回首页">
+            <button class="round-btn" type="button" data-nav="wx" aria-label="返回聊天列表">
               <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M12.4 4.6 7 10l5.4 5.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <button class="chatbar__id" type="button" data-open="characterSwitch" aria-haspopup="dialog" aria-label="切换正在说话的角色">
@@ -5612,7 +5800,7 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
         <!-- ④ 一起听 -->
         <section class="view view--circle" data-view="circle" aria-label="朋友圈">
           <div class="wx-nav">
-            <button class="wx-nav__back" type="button" data-nav="home" aria-label="返回">
+            <button class="wx-nav__back" type="button" data-nav="wx" aria-label="返回">
               <svg viewBox="0 0 24 24" fill="none" width="22" height="22"><path d="M14.5 5.5 8 12l6.5 6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <span class="wx-nav__title">朋友圈</span>
@@ -5975,7 +6163,7 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
 
       <div class="error-layer" id="errorLayer" aria-live="assertive"></div>
       <nav class="tabbar" id="tabbar" aria-label="主导航">
-        <button class="tab" type="button" data-nav="chat" aria-current="false">
+        <button class="tab" type="button" data-nav="wx" aria-current="false">
           <span class="tab__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4.6c4.3 0 7.7 2.8 7.7 6.2 0 3.4-3.4 6.2-7.7 6.2-.8 0-1.6-.1-2.3-.3l-3.5 2.3.8-2.9c-1.5-1.1-2.4-2.7-2.4-4.5 0-3.4 3-6.2 7.4-6.2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
           <span class="tab__label">聊天</span>
         </button>
@@ -11213,7 +11401,7 @@ const DATA = {
   var rawLocalSnapshot = null; /* 迁移用：file:// 或旧浏览器里的原始存档 */
   var SESSION_KEY = 'msyq.entered';
   var THEME_ORDER = ['pink', 'ice'];
-  var NO_TAB_VIEWS = ['chat', 'characters', 'personas', 'books', 'providers', 'presets', 'stats'];
+  var NO_TAB_VIEWS = ['wx', 'chat', 'characters', 'personas', 'books', 'providers', 'presets', 'stats'];
 
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
@@ -12014,6 +12202,7 @@ const DATA = {
 
   function renderAfterServerRefresh() {
     applyTheme(state.theme);
+    renderWx();
     renderHome();
     renderMemories();
     renderMe();
@@ -12822,6 +13011,7 @@ const DATA = {
     if (view === 'chat') {
       try { sessionStorage.setItem(SESSION_KEY, '1'); } catch (e) { /* 忽略 */ }
     }
+    if (view === 'wx') renderWx();
     go(view);
   }
 
@@ -12920,6 +13110,125 @@ const DATA = {
       avatarHTML(rpMe && rpMe.persona, 'avatar avatar--me msg__avatar') +
     '</div>';
   }
+
+  /* ---------- 聊天主界面（微信式） ---------- */
+  /* 这一层只做「把人和对话摊开」。
+     微信 = 有对话往来的人；通讯录 = 所有角色，包括还没聊过的。 */
+  var wxTabName = 'chats';
+
+  function wxAva(person, cls) {
+    var has = !!(person && person.avatar);
+    return '<span class="avatar ' + (cls || '') + (has ? ' avatar--img' : ' avatar--ai') + '">' +
+      (has ? '<img src="' + esc(person.avatar) + '" alt="">' : esc(initialOf(person) || '')) +
+      '</span>';
+  }
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  function wxListTime(at) {
+    if (!at) return '';
+    var d = new Date(at);
+    if (isNaN(d.getTime())) return '';
+    var now = new Date();
+    if (d.toDateString() === now.toDateString()) return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    var y = new Date(now.getTime() - 86400000);
+    if (d.toDateString() === y.toDateString()) return '昨天';
+    return (d.getMonth() + 1) + '/' + d.getDate();
+  }
+
+  function renderWxChats() {
+    var box = document.getElementById('wxChatList');
+    if (!box) return;
+    var rows = (state.characters || []).map(function (c) {
+      var chat = state.chats[c.id];
+      if (!chat) return null;
+      var msgs = chat.messages || [];
+      var last = msgs.length ? msgs[msgs.length - 1] : null;
+      var preview = String((last && last.text) || c.first_mes || '').replace(/\s+/g, ' ');
+      return {
+        id: c.id,
+        name: c.name,
+        avatar: c.avatar,
+        preview: preview.slice(0, 40),
+        at: chat.lastAt || ''
+      };
+    }).filter(Boolean);
+
+    rows.sort(function (a, b) { return String(b.at || '').localeCompare(String(a.at || '')); });
+
+    if (!rows.length) {
+      box.innerHTML = '<p class="wx-empty">还没有对话。<br>去通讯录里找一个开始。</p>';
+      return;
+    }
+    box.innerHTML = rows.map(function (r) {
+      return '<button class="wx-row" type="button" data-wx-chat="' + esc(r.id) + '">' +
+        wxAva(r, 'wx-row__ava') +
+        '<span class="wx-row__main">' +
+          '<span class="wx-row__top">' +
+            '<span class="wx-row__name">' + esc(r.name) + '</span>' +
+            '<span class="wx-row__time">' + esc(wxListTime(r.at)) + '</span>' +
+          '</span>' +
+          '<span class="wx-row__sub">' + esc(r.preview || '还没有消息') + '</span>' +
+        '</span>' +
+      '</button>';
+    }).join('');
+  }
+
+  function renderWxContacts() {
+    var box = document.getElementById('wxContacts');
+    if (!box) return;
+    var chars = (state.characters || []).slice().sort(function (a, b) {
+      return String(a.name || '').localeCompare(String(b.name || ''), 'zh');
+    });
+    if (!chars.length) {
+      box.innerHTML = '<p class="wx-empty">还没有角色。</p>';
+      return;
+    }
+    box.innerHTML = chars.map(function (c) {
+      return '<button class="wx-row" type="button" data-wx-contact="' + esc(c.id) + '">' +
+        wxAva(c, 'wx-row__ava') +
+        '<span class="wx-row__main">' +
+          '<span class="wx-row__top"><span class="wx-row__name">' + esc(c.name) + '</span></span>' +
+          '<span class="wx-row__sub">' + esc(String(c.desc || '').slice(0, 34)) + '</span>' +
+        '</span>' +
+      '</button>';
+    }).join('');
+  }
+
+  function renderWx() {
+    var title = document.getElementById('wxTitle');
+    if (title) title.textContent = wxTabName === 'chats' ? '微信' : '通讯录';
+    $$('.wx-panel').forEach(function (p) {
+      p.hidden = p.getAttribute('data-wx-panel') !== wxTabName;
+    });
+    $$('.wx-tab[data-wx-tab]').forEach(function (t) {
+      var on = t.getAttribute('data-wx-tab') === wxTabName;
+      t.classList.toggle('is-on', on);
+      t.setAttribute('aria-current', String(on));
+    });
+    renderWxChats();
+    renderWxContacts();
+  }
+
+  function wxTab(name) {
+    wxTabName = name;
+    renderWx();
+    var body = document.querySelector('.wx-body');
+    if (body) body.scrollTop = 0;
+  }
+
+  (function bindWx() {
+    document.addEventListener('click', function (e) {
+      var tab = e.target.closest('[data-wx-tab]');
+      if (tab) { e.preventDefault(); wxTab(tab.getAttribute('data-wx-tab')); return; }
+      var row = e.target.closest('[data-wx-chat]') || e.target.closest('[data-wx-contact]');
+      if (row) {
+        e.preventDefault();
+        var id = row.getAttribute('data-wx-chat') || row.getAttribute('data-wx-contact');
+        if (id) startChatWith(id);
+      }
+    });
+  })();
 
   function renderChat() {
     var list = $('#chatList');
