@@ -29,6 +29,16 @@ def music_logout(conn=Depends(get_conn)) -> dict:
     return music.logout(conn)
 
 
+@router.get("/qr/new")
+def music_qr_new() -> dict:
+    return {"ok": True, **music.qr_new()}
+
+
+@router.get("/qr/check")
+def music_qr_check(key: str = "", conn=Depends(get_conn)) -> dict:
+    return {"ok": True, **music.qr_check(conn, key)}
+
+
 @router.get("/search")
 def music_search(q: str = "", limit: int = 20) -> dict:
     return {"ok": True, "songs": music.search(q, max(1, min(50, limit)))}

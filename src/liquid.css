@@ -587,6 +587,25 @@ u { text-decoration: none; border-bottom: 1px solid rgba(var(--tint-rgb), .7); p
 .empty-note { text-align: center; padding: 28px 10px; font-family: var(--serif); font-size: 13px; color: var(--text-3); }
 
 /* ---------- 10. 一起听 ---------- */
+.music-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0 6px;
+}
+.music-qr img {
+  width: 176px;
+  height: 176px;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .7) inset, 0 10px 26px -20px rgba(90, 70, 90, .5);
+  display: block;
+}
+.music-qr img:not([src]) { opacity: 0; }
+.music-qr__hint { font-size: 12px; color: var(--ink-3); text-align: center; }
+
 .music-code { display: flex; gap: 8px; align-items: stretch; }
 .music-code .field { flex: 1; min-width: 0; }
 .music-code .btn { flex: none; white-space: nowrap; }

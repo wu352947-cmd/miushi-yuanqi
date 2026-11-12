@@ -3562,6 +3562,51 @@
     }).catch(function (err) { toast(err.message || '没存上。'); });
   }
 
+  var musicLoginMode = 'qr';   // 'qr' | 'code'
+  var musicQrTimer = 0;
+  var musicQrKey = '';
+
+  function setQrHint(text) {
+    var el = document.getElementById('musicQrHint');
+    if (el) el.textContent = text;
+  }
+
+  function musicQrStart() {
+    clearInterval(musicQrTimer);
+    musicQrKey = '';
+    setQrHint('正在生成二维码…');
+    serverFetch('/music/qr/new').then(function (res) {
+      musicQrKey = res.key || '';
+      var img = document.getElementById('musicQrImg');
+      if (img && res.image) img.src = res.image;
+      setQrHint('用网易云 App 扫一扫');
+      clearInterval(musicQrTimer);
+      musicQrTimer = setInterval(musicQrPoll, 2000);
+    }).catch(function (err) {
+      setQrHint(err.message || '二维码没出来，点刷新重试。');
+    });
+  }
+
+  function musicQrPoll() {
+    if (!document.querySelector('.sheet-layer.is-open')) {
+      clearInterval(musicQrTimer);
+      return;
+    }
+    if (!musicQrKey) return;
+    serverFetch('/music/qr/check?key=' + encodeURIComponent(musicQrKey)).then(function (r) {
+      if (r.code === 803 && r.loggedIn) {
+        clearInterval(musicQrTimer);
+        musicState = r;
+        closeSheet();
+        renderMusicAccount();
+        toast('连上了。');
+        return;
+      }
+      setQrHint(r.message || '');
+      if (r.code === 800) clearInterval(musicQrTimer);
+    }).catch(function () { /* 轮询失败不打扰 */ });
+  }
+
   SHEETS.musicLogin = function () {
     if (musicState.loggedIn) {
       return {
@@ -3573,6 +3618,20 @@
           '</div>',
         foot: '<button class="btn" type="button" data-close>好</button>' +
           '<button class="btn" type="button" data-a2="music-logout">退出登录</button>'
+      };
+    }
+    if (musicLoginMode === 'qr') {
+      return {
+        title: '登录网易云',
+        body: '<div class="music-qr">' +
+            '<img id="musicQrImg" alt="网易云登录二维码">' +
+            '<p class="music-qr__hint" id="musicQrHint">正在生成二维码…</p>' +
+          '</div>' +
+          '<p class="sheet-label">手机上打开网易云 App，扫一扫，然后点确认</p>' +
+          '<button class="text-btn" type="button" data-a2="music-qr-refresh">刷新二维码</button>' +
+          '<div class="sheet-divider"></div>' +
+          '<button class="text-btn" type="button" data-a2="music-code-mode">改用手机号验证码登录</button>',
+        foot: '<button class="btn" type="button" data-close>关闭</button>'
       };
     }
     return {
@@ -3587,7 +3646,9 @@
             'autocomplete="one-time-code" placeholder="短信里的 6 位">' +
           '<button class="btn btn--ghost" type="button" id="musicSendCode" data-a2="music-send">获取验证码</button>' +
         '</div>' +
-        '<p class="sheet-label">验证码只用来登录，账号信息存在服务器本地</p>',
+        '<p class="sheet-label">验证码只用来登录，账号信息存在服务器本地</p>' +
+        '<div class="sheet-divider"></div>' +
+        '<button class="text-btn" type="button" data-a2="music-back-qr">改用扫码登录（更稳）</button>',
       foot: '<button class="btn" type="button" data-close>取消</button>' +
         '<button class="btn btn--primary" type="button" data-a2="music-login">登录</button>'
     };
@@ -6057,7 +6118,15 @@
     // 先问一遍通用分发：它只认自己那批，不认就返回 false，继续往下走
     if (typeof handleA2Action === 'function' && handleA2Action(kind, el) === true) return;
     /* 音乐：一起听里的账号条和登录弹层都用 data-a2 */
-    if (kind === 'music-account') { openSheet('musicLogin'); return; }
+    if (kind === 'music-account') {
+      musicLoginMode = 'qr';
+      openSheet('musicLogin');
+      musicQrStart();
+      return;
+    }
+    if (kind === 'music-qr-refresh') { musicQrStart(); return; }
+    if (kind === 'music-code-mode') { musicLoginMode = 'code'; openSheet('musicLogin'); return; }
+    if (kind === 'music-back-qr') { musicLoginMode = 'qr'; openSheet('musicLogin'); musicQrStart(); return; }
     if (kind === 'music-send') { musicSendCode(); return; }
     if (kind === 'music-login') { musicLogin(); return; }
     if (kind === 'music-logout') { musicLogout(); return; }

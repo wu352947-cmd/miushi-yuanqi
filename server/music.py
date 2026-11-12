@@ -148,6 +148,62 @@ def logout(conn) -> dict:
     return {"ok": True}
 
 
+# ---------------------------------------------------------------- 扫码登录
+def qr_new() -> dict:
+    """拿 unikey + 二维码图（data URL，前端直接 img src）。"""
+    import time as _time
+
+    key_data = _body(_call("/login/qr/key", {"timestamp": int(_time.time())}))
+    key = ((key_data.get("data") or {}).get("unikey")) or ""
+    if not key:
+        raise ApiError("badgateway", "二维码没生成出来，等一下再试。")
+    created = _body(_call("/login/qr/create", {"key": key, "qrimg": "true"}))
+    img = ((created.get("data") or {}).get("qrimg")) or ""
+    if not img:
+        raise ApiError("badgateway", "二维码图没生成出来。")
+    return {"key": key, "image": img}
+
+
+def qr_check(conn, key: str) -> dict:
+    """轮询。800 过期 / 801 等扫 / 802 待确认 / 803 成功。
+
+    成功时把 cookie 存下来，再用 /user/account 补昵称和头像。
+    """
+    key = (key or "").strip()
+    if not key:
+        raise ApiError("badrequest", "缺少二维码标识。")
+    import time as _time
+
+    data = _call("/login/qr/check", {"key": key, "timestamp": int(_time.time())})
+    body = _body(data)
+    code = body.get("code")
+    if code != 803:
+        msg = {800: "二维码过期了，点一下刷新。", 801: "等你拿 App 扫一下。", 802: "在手机上点一下确认。"}.get(
+            code, str(body.get("message") or "")
+        )
+        return {"code": code, "message": msg, "loggedIn": False}
+
+    cookie = body.get("cookie") or ""
+    if not cookie and isinstance(data.get("cookie"), list):
+        cookie = ";".join(data["cookie"])
+    if not cookie:
+        raise ApiError("badgateway", "扫码成功了，但没拿到凭证，重试一次。")
+
+    nickname, avatar, uid = "", "", ""
+    try:
+        acct = _body(_call("/user/account", cookie=cookie))
+        prof = acct.get("profile") or {}
+        nickname = str(prof.get("nickname") or "")
+        avatar = str(prof.get("avatarUrl") or "")
+        uid = str(prof.get("userId") or "")
+    except Exception:  # noqa: BLE001
+        LOG.warning("扫码后取账号信息失败，先用空昵称顶上")
+
+    db.save_music_auth(conn, auth.encrypt_key(cookie), uid, nickname, avatar)
+    LOG.info("网易云扫码登录成功：%s", nickname or uid)
+    return {"code": 803, "loggedIn": True, "message": "登录成功。", **state(conn)}
+
+
 # ---------------------------------------------------------------- 歌曲
 def _song_json(s: dict) -> dict:
     artists = s.get("artists") or s.get("ar") or []
