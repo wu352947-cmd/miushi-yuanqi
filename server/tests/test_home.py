@@ -10,14 +10,14 @@ from server import db, home
 
 def test_birthday_days():
     today = date(2026, 11, 12)
-    assert home.birthday_days("11-12", today) == 0        # 就是今天
+    assert home.birthday_days("11-12", today) == 0
     assert home.birthday_days("11-20", today) == 8
     assert home.birthday_days("05-13", today) == 182
-    assert home.birthday_days("01-01", date(2026, 12, 31)) == 1   # 跨年
+    assert home.birthday_days("01-01", date(2026, 12, 31)) == 1
     assert home.birthday_days("", today) is None
     assert home.birthday_days(None, today) is None
     assert home.birthday_days("abc", today) is None
-    assert home.birthday_days("02-30", today) is None     # 不存在的日期
+    assert home.birthday_days("02-30", today) is None
 
 
 def _seed(conn, cid, title, importance=7, kind="note"):
@@ -32,7 +32,7 @@ def _seed(conn, cid, title, importance=7, kind="note"):
 
 
 def test_pick_memory_stable_within_a_day(client):
-    """同一天反复刷新首页，看到的必须是同一条——不然像有人在换。"""
+    """同一天反复刷新首页，看到的必须是同一条——不然像有人在背后换。"""
     with db.get_db() as conn:
         conn.execute("DELETE FROM memories")
         _seed(conn, "c1", "A")
@@ -89,13 +89,32 @@ def test_note_endpoint_writes_and_caches(client, monkeypatch):
     assert body["ok"] is True, body
     text = body["note"]["text"]
     assert text
-    # 同一天再问一次：直接给缓存，不重新调模型
     again = client.post("/api/home/note?chat_id=" + chat_id).json()
     assert again["note"]["text"] == text
 
 
+def test_default_settings_have_home_fields(client):
+    """前端 baseState 和后端 DEFAULT_SETTINGS 的默认值必须一致，
+    否则后端根本不知道有城市，天气永远显示不出来。"""
+    with db.get_db() as conn:
+        cfg = db.load_app_settings(conn)
+    s = cfg["settings"]
+    assert s["homeCity"] == "福州"
+    assert s["birthday"] == ""
+    assert s["homeNoteEnabled"] is True
+
+
 def test_home_payload_hides_missing(client):
-    """没设城市、没设生日、也没有便条 → 各块都是 null，前端负责藏。"""
+    """城市留空、没设生日、也没有便条 → 各块都是 null，前端负责藏。
+
+    这里必须先把城市清掉：默认值是「福州」，不清就会真的去问天气。
+    """
+    with db.get_db() as conn:
+        cfg = db.load_app_settings(conn)
+        cfg["settings"]["homeCity"] = ""
+        cfg["settings"]["birthday"] = ""
+        db.save_app_settings(conn, cfg)
+
     r = client.get("/api/home?character_id=miao&chat_id=nope")
     assert r.status_code == 200, r.text
     d = r.json()
