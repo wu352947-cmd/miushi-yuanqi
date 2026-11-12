@@ -970,6 +970,14 @@
   }
   /* 朋友圈（还有 NPC、每日配额）都挂在这段关系上。
      同一个人设换角色、同一个角色换人设，都是不同的世界。 */
+  /* 某段关系的记录。备注名、描述都挂在这上面。 */
+  function bondOf(characterId, personaId) {
+    var pid = personaId == null ? currentBond().personaId : personaId;
+    return (state.bonds || []).filter(function (x) {
+      return x.characterId === characterId && (x.personaId || '') === (pid || '');
+    })[0] || null;
+  }
+
   function currentBondId() {
     var b = currentBond();
     var hit = (state.bonds || []).filter(function (x) {
@@ -1679,9 +1687,13 @@
     }
   });
 
+  /* 显示用：你给她起的备注优先于角色卡上的名字。
+     注意这只影响界面，发给模型的名字还是角色卡里的那个。 */
   function charName() {
     var c = currentChar();
-    return c ? c.name : '缪诗';
+    if (!c) return '缪诗';
+    var b = bondOf(c.id);
+    return (b && b.nickname) || c.name;
   }
   function charInitial() { return charName().charAt(0); }
 
@@ -1767,9 +1779,10 @@
       var msgs = chat.messages || [];
       var last = msgs.length ? msgs[msgs.length - 1] : null;
       var preview = String((last && last.text) || c.first_mes || '').replace(/\s+/g, ' ');
+      var b = bondOf(c.id);
       return {
         id: c.id,
-        name: c.name,
+        name: (b && b.nickname) || c.name,
         avatar: c.avatar,
         preview: preview.slice(0, 40),
         at: chat.lastAt || ''
@@ -1832,8 +1845,9 @@
       var sub = talked
         ? String((last && last.text) || '').replace(/\s+/g, ' ').slice(0, 28)
         : (String(c.desc || '').replace(/\s+/g, ' ').slice(0, 28) || '还没说过话');
+      var b = bondOf(c.id);
       (talked ? chatting : idle).push({
-        name: c.name,
+        name: (b && b.nickname) || c.name,
         sub: sub,
         attr: 'data-wx-contact="' + esc(c.id) + '"',
         ava: wxAva(c, 'wx-row__ava')
@@ -1876,7 +1890,7 @@
     paintAllAvatars();
     var c = currentChar();
     if (!c) { sub2.textContent = '还没选角色'; return; }
-    sub2.textContent = '和' + c.name + ' 在一起第 ' + daysTogether(bondStartDate()) + ' 天';
+    sub2.textContent = '和' + charName() + ' 在一起第 ' + daysTogether(bondStartDate()) + ' 天';
   }
 
   function wxTab(name) {
@@ -2738,7 +2752,12 @@
       })[0] || null;
     }
 
-    var displayName = (person && person.name) || t.name || '她';
+    var b = bondOf(t.id);
+    var noteName = (t.kind === 'character' && b && b.nickname) || '';
+    var displayName = noteName || (person && person.name) || t.name || '她';
+
+    var noteBtn = document.getElementById('pfNoteBtn');
+    if (noteBtn) noteBtn.hidden = t.kind !== 'character';
 
     var title = document.getElementById('profileTitle');
     if (title) title.textContent = displayName;
@@ -2758,6 +2777,13 @@
       if (t.kind === 'npc') sign = String((person && person.relation) || '');
       else sign = String((person && (person.desc || person.description)) || '');
       signEl.textContent = sign ? sign.slice(0, 70) : '这个人还没写签名。';
+    }
+
+    var noteEl = document.getElementById('pfMyNote');
+    if (noteEl) {
+      var myNote = (t.kind === 'character' && b && b.note) || '';
+      noteEl.textContent = myNote ? '备注：' + myNote : '';
+      noteEl.hidden = !myNote;
     }
 
     var cover = document.getElementById('pfCover');
@@ -3375,6 +3401,50 @@
       foot: '<button class="btn" type="button" data-close>取消</button><button class="btn btn--primary" type="button" data-save-now>保存</button>'
     };
   };
+
+  SHEETS.bondNote = function () {
+    var c = currentChar();
+    var b = c ? bondOf(c.id) : null;
+    var cur = (b && b.nickname) || '';
+    var memo = (b && b.note) || '';
+    return {
+      title: '备注',
+      body: '<p class="sheet-label">只影响你看到的名字，不会改角色卡</p>' +
+        '<p class="field-label">备注名</p>' +
+        '<input class="field" type="text" id="bondNickname" maxlength="20" autocomplete="off" value="' +
+          esc(cur) + '" placeholder="' + esc(c ? c.name : '') + '">' +
+        '<p class="field-label">描述</p>' +
+        '<input class="field" type="text" id="bondMemo" maxlength="30" autocomplete="off" value="' +
+          esc(memo) + '" placeholder="比如：同班同学">' +
+        '<p class="sheet-label">两项都留空就是恢复原名</p>',
+      foot: '<button class="btn" type="button" data-close>取消</button>' +
+        '<button class="btn btn--primary" type="button" data-a2="bond-note-save">保存</button>'
+    };
+  };
+
+  function saveBondNote() {
+    var c = currentChar();
+    if (!c) return;
+    var bondId = currentBondId();
+    if (!bondId) { toast('这段关系还没建立起来。'); return; }
+    var a = document.getElementById('bondNickname');
+    var b = document.getElementById('bondMemo');
+    var nickname = ((a && a.value) || '').trim();
+    var note = ((b && b.value) || '').trim();
+    closeSheet();
+    serverFetch('/bonds/' + encodeURIComponent(bondId), {
+      method: 'PUT',
+      body: { nickname: nickname, note: note }
+    }).then(function () {
+      return serverFetch('/bonds');
+    }).then(function (data) {
+      state.bonds = (data && data.bonds) || [];
+      renderWx();
+      renderProfile();
+      updateChatHeader();
+      toast(nickname ? '备注好了。' : '恢复原名了。');
+    }).catch(function (err) { toast(err.message || '没存上。'); });
+  }
 
   SHEETS.memory = function (id) {
     var m = state.memories.filter(function (x) { return x.id === id; })[0];
@@ -5702,6 +5772,8 @@
       return true;
     }
     if (action === 'profile-back') { navTo(profileBack || 'circle'); return true; }
+    if (action === 'profile-note') { openSheet('bondNote'); return true; }
+    if (action === 'bond-note-save') { saveBondNote(); return true; }
     if (action === 'chat-author') {
       var me = currentChar();
       if (me) openProfile('character', me.id, me.name);
