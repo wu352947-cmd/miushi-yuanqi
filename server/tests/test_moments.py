@@ -236,3 +236,58 @@ def test_character_speaks_at_most_twice_per_post(client, monkeypatch):
     feed = client.get("/api/moments?character_id=miao").json()
     mine = [r for r in feed["posts"][0]["replies"] if r["authorKind"] == "character"]
     assert len(mine) == 2
+
+def test_like_and_unlike(client, monkeypatch):
+    """点赞：点一次一个，重复点不会多，取消就没了。"""
+    monkeypatch.setenv("MSYQ_MOCK", "1")
+    _prime(client)
+    pid = client.post(
+        "/api/moments", json={"characterId": "miao", "text": "赞一下试试。"}
+    ).json()["post"]["id"]
+
+    r = client.post("/api/moments/%s/like" % pid)
+    assert r.status_code == 200, r.text
+    likes = r.json()["likes"]
+    assert len(likes) == 1
+    assert likes[0]["authorKind"] == "persona"
+
+    # 再点一次不该多出来
+    again = client.post("/api/moments/%s/like" % pid)
+    assert len(again.json()["likes"]) == 1
+
+    feed = client.get("/api/moments?character_id=miao").json()
+    assert len(feed["posts"][0]["likes"]) == 1
+
+    gone = client.delete("/api/moments/%s/like" % pid)
+    assert gone.status_code == 200
+    assert gone.json()["likes"] == []
+
+
+def test_like_is_scoped_to_post(client, monkeypatch):
+    """两个帖子的赞互不影响。"""
+    monkeypatch.setenv("MSYQ_MOCK", "1")
+    _prime(client)
+    a = client.post("/api/moments", json={"characterId": "miao", "text": "第一条。"}).json()["post"]["id"]
+    b = client.post("/api/moments", json={"characterId": "miao", "text": "第二条。"}).json()["post"]["id"]
+
+    client.post("/api/moments/%s/like" % a)
+    feed = client.get("/api/moments?character_id=miao").json()
+    by_id = {p["id"]: p for p in feed["posts"]}
+    assert len(by_id[a]["likes"]) == 1
+    assert len(by_id[b]["likes"]) == 0
+
+
+def test_deleting_post_clears_its_likes(client, monkeypatch):
+    monkeypatch.setenv("MSYQ_MOCK", "1")
+    _prime(client)
+    pid = client.post(
+        "/api/moments", json={"characterId": "miao", "text": "删掉看看。"}
+    ).json()["post"]["id"]
+    client.post("/api/moments/%s/like" % pid)
+    client.delete("/api/moments/%s" % pid)
+
+    with db.get_db() as conn:
+        left = conn.execute(
+            "SELECT COUNT(*) AS n FROM post_likes WHERE post_id = ?", (pid,)
+        ).fetchone()["n"]
+    assert left == 0

@@ -2223,6 +2223,7 @@
      只有「她和我」的动态进聊天上下文，NPC 的只在这里出现。 */
   var circleCache = { characterId: '', posts: [], npcs: [], loaded: false };
   var circleReplyFor = '';   // 哪个帖子展开了评论框
+  var circleMenuFor = '';    // 哪个帖子展开了「赞 / 评论」小菜单
 
   function circleChar() {
     return currentChar();
@@ -2280,6 +2281,15 @@
       return '<div class="wx-comment"><span class="wx-comment__who">' +
         esc(r.authorName) + '</span>' + esc(r.text) + '</div>';
     }).join('');
+    var likes = post.likes || [];
+    var likedByMe = likes.some(function (l) { return l.authorKind === 'persona'; });
+    var likeRow = likes.length
+      ? '<div class="wx-post__likes"><span class="wx-like-heart">♡</span>' +
+        '<span class="wx-like-names">' +
+        likes.map(function (l) { return esc(l.authorName); }).join('，') +
+        '</span></div>'
+      : '';
+    var menuOpen = circleMenuFor === post.id;
     var imgs = post.images || [];
     var grid = imgs.length
       ? '<div class="wx-post__imgs" data-n="' + imgs.length + '">' +
@@ -2298,9 +2308,19 @@
         '<div class="wx-post__meta">' +
           '<span class="wx-post__time">' + esc(wxTime(post.at)) + '</span>' +
           '<button class="wx-post__more" type="button" data-a2="circle-more" data-id="' +
-            esc(post.id) + '" aria-label="评论或删除">···</button>' +
+            esc(post.id) + '" aria-label="赞或评论">···</button>' +
         '</div>' +
-        (replies ? '<div class="wx-post__interact">' + replies + '</div>' : '') +
+        (menuOpen
+          ? '<div class="wx-post__menu">' +
+              '<button type="button" data-a2="circle-like" data-id="' + esc(post.id) + '">' +
+                (likedByMe ? '取消' : '赞') +
+              '</button>' +
+              '<button type="button" data-a2="circle-menu-reply" data-id="' + esc(post.id) + '">评论</button>' +
+            '</div>'
+          : '') +
+        ((likes.length || replies)
+          ? '<div class="wx-post__interact">' + likeRow + replies + '</div>'
+          : '') +
         (open
           ? '<div class="wx-post__reply">' +
               '<input type="text" maxlength="200" placeholder="评论" data-reply-for="' + esc(post.id) + '" aria-label="评论">' +
@@ -2348,6 +2368,33 @@
           '<span class="wx-npc__rel">' + esc(n.relation || '') + '</span>' +
           '<button type="button" data-a2="circle-npc-drop" data-id="' + esc(n.id) + '">删除</button></div>';
       }).join('');
+  }
+
+  function toggleCircleMenu(postId) {
+    circleMenuFor = circleMenuFor === postId ? '' : postId;
+    renderCircleFeed();
+  }
+
+  function circleMenuReply(postId) {
+    circleMenuFor = '';
+    circleReplyFor = postId;
+    renderCircleFeed();
+    var box = document.querySelector('[data-reply-for="' + postId + '"]');
+    if (box) box.focus();
+  }
+
+  function toggleCircleLike(postId) {
+    var post = (circleCache.posts || []).filter(function (p) { return p.id === postId; })[0];
+    var liked = !!(post && (post.likes || []).some(function (l) { return l.authorKind === 'persona'; }));
+    var base = '/moments/' + encodeURIComponent(postId) + '/like';
+    serverFetch(base, { method: liked ? 'DELETE' : 'POST' })
+      .then(function (res) {
+        circleMenuFor = '';
+        if (post && res && res.likes) post.likes = res.likes;
+        renderCircleFeed();
+        toast(liked ? '取消了。' : '赞了。');
+      })
+      .catch(function (err) { toast(err.message || '没点上。'); });
   }
 
   function toggleCircleReply(postId) {
@@ -5376,7 +5423,9 @@
   function handleA2Action(action, el) {
     if (action === 'circle-compose') { openSheet('circlePost'); return true; }
     if (action === 'circle-publish') { publishCircle(); return true; }
-    if (action === 'circle-more') { toggleCircleReply(el.getAttribute('data-id')); return true; }
+    if (action === 'circle-more') { toggleCircleMenu(el.getAttribute('data-id')); return true; }
+    if (action === 'circle-menu-reply') { circleMenuReply(el.getAttribute('data-id')); return true; }
+    if (action === 'circle-like') { toggleCircleLike(el.getAttribute('data-id')); return true; }
     if (action === 'circle-reply') { circleReply(el.getAttribute('data-id')); return true; }
     if (action === 'circle-drop') { circleDropPost(el.getAttribute('data-id')); return true; }
     if (action === 'circle-npc-drop') { circleDropNpc(el.getAttribute('data-id')); return true; }

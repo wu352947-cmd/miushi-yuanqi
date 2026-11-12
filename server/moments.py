@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import re
 from typing import Any
 
@@ -34,6 +35,8 @@ DAILY_CHARACTER_LIMIT = 1
 DAILY_NPC_LIMIT = 1
 # 她发完，有 NPC 来评论的概率
 COMMENT_CHANCE = 0.4
+# 她评论之后，有多大比例同时点个赞
+LIKE_CHANCE = 0.5
 # 进上下文的条数
 PROMPT_POSTS = 3
 
@@ -509,6 +512,9 @@ async def character_react(post_id: str, my_text: str = "") -> dict[str, Any]:
 
     with db.get_db() as conn:
         reply = db.add_reply(conn, post_id, "character", character_id, char_name, text)
+        # 既然看到了、也开口了，顺手点个赞。不总是点，免得每条都带一个心
+        if random.random() < LIKE_CHANCE:
+            db.add_like(conn, post_id, "character", character_id, char_name)
     LOG.info("朋友圈：%s 接了一句（%d 字）", char_name, len(text))
     return {"ok": True, "reply": reply}
 

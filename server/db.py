@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - 兜底
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 # --------------------------------------------------------------------------- 路径
@@ -381,6 +381,17 @@ SCHEMA: list[str] = [
       created_at TEXT NOT NULL
     )
     """,
+    # v9：点赞。谁给谁点过，一个帖子下同一个人只能有一条。
+    """
+    CREATE TABLE IF NOT EXISTS post_likes (
+      id TEXT PRIMARY KEY,
+      post_id TEXT NOT NULL,
+      author_kind TEXT NOT NULL DEFAULT 'persona',
+      author_id TEXT NOT NULL DEFAULT '',
+      author_name TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS circle_npcs (
       id TEXT PRIMARY KEY,
@@ -408,6 +419,8 @@ SCHEMA: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_usage_char ON usage(character_id)",
     "CREATE INDEX IF NOT EXISTS idx_posts_char ON posts(character_id, at)",
     "CREATE INDEX IF NOT EXISTS idx_replies_post ON post_replies(post_id, created_at)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_likes_unique "
+    "ON post_likes(post_id, author_kind, author_id)",
     "CREATE INDEX IF NOT EXISTS idx_npcs_char ON circle_npcs(character_id)",
     "CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, id)",
     "CREATE INDEX IF NOT EXISTS idx_entries_book ON world_book_entries(book_id, ord)",
@@ -1855,7 +1868,7 @@ def delete_digest(conn, chat_id: str) -> bool:
 # 换角色就换一整个世界，NPC 也不共用。
 
 
-def post_json(row, replies=None) -> dict[str, Any]:
+def post_json(row, replies=None, likes=None) -> dict[str, Any]:
     try:
         images = jloads(row["images_json"] or "[]", [])
     except (KeyError, IndexError, TypeError):
@@ -1874,6 +1887,7 @@ def post_json(row, replies=None) -> dict[str, Any]:
         "images": images if isinstance(images, list) else [],
         "createdAt": row["created_at"],
         "replies": replies or [],
+        "likes": likes or [],
     }
     return out
 
@@ -1903,6 +1917,58 @@ def npc_json(row) -> dict[str, Any]:
     }
 
 
+def like_json(row) -> dict[str, Any]:
+    return {
+        "authorKind": row["author_kind"],
+        "authorId": row["author_id"],
+        "authorName": row["author_name"],
+        "createdAt": row["created_at"],
+    }
+
+
+def list_likes(conn, post_id: str) -> list[dict[str, Any]]:
+    return [
+        like_json(r)
+        for r in conn.execute(
+            "SELECT * FROM post_likes WHERE post_id = ? ORDER BY created_at ASC", (post_id,)
+        ).fetchall()
+    ]
+
+
+def has_liked(conn, post_id: str, author_kind: str, author_id: str) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM post_likes "
+            "WHERE post_id = ? AND author_kind = ? AND author_id = ?",
+            (post_id, author_kind, author_id),
+        ).fetchone()
+    )
+
+
+def add_like(
+    conn, post_id: str, author_kind: str, author_id: str, author_name: str
+) -> bool:
+    """点个赞。已经点过就什么都不做（唯一索引兜底）。"""
+    if has_liked(conn, post_id, author_kind, author_id):
+        return False
+    conn.execute(
+        "INSERT OR IGNORE INTO post_likes "
+        "(id, post_id, author_kind, author_id, author_name, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (new_id("like"), post_id, author_kind, author_id, author_name, now_iso()),
+    )
+    return True
+
+
+def remove_like(conn, post_id: str, author_kind: str, author_id: str) -> bool:
+    cur = conn.execute(
+        "DELETE FROM post_likes "
+        "WHERE post_id = ? AND author_kind = ? AND author_id = ?",
+        (post_id, author_kind, author_id),
+    )
+    return cur.rowcount > 0
+
+
 def set_post_images(conn, post_id: str, images: list[dict[str, Any]]) -> None:
     """整组替换某条动态的配图路径。文件本身的增删由调用方负责。"""
     conn.execute(
@@ -1926,7 +1992,15 @@ def list_posts(conn, character_id: str, limit: int = 50) -> list[dict[str, Any]]
         ids,
     ).fetchall():
         replies.setdefault(rr["post_id"], []).append(reply_json(rr))
-    return [post_json(r, replies.get(r["id"], [])) for r in rows]
+    likes: dict[str, list] = {}
+    for lr in conn.execute(
+        "SELECT * FROM post_likes WHERE post_id IN (" + marks + ") ORDER BY created_at ASC",
+        ids,
+    ).fetchall():
+        likes.setdefault(lr["post_id"], []).append(like_json(lr))
+    return [
+        post_json(r, replies.get(r["id"], []), likes.get(r["id"], [])) for r in rows
+    ]
 
 
 def get_post_row(conn, post_id: str):
@@ -1971,6 +2045,7 @@ def create_post(
 def delete_post(conn, post_id: str) -> bool:
     cur = conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))
     conn.execute("DELETE FROM post_replies WHERE post_id = ?", (post_id,))
+    conn.execute("DELETE FROM post_likes WHERE post_id = ?", (post_id,))
     return cur.rowcount > 0
 
 

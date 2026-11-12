@@ -239,3 +239,27 @@ def drop_post_image(post_id: str, index: int, conn=Depends(get_conn)) -> dict:
             pass
     db.set_post_images(conn, post_id, images)
     return {"ok": True, "images": images}
+
+
+@router.post("/{post_id}/like")
+def like_post(post_id: str, conn=Depends(get_conn)) -> dict:
+    """我点个赞。重复点不会多出一个（唯一索引兜底）。"""
+    row = db.get_post_row(conn, post_id)
+    if not row:
+        raise ApiError("notfound", "这条动态已经不在了。", status=404)
+    persona = _persona_for(conn, row["character_id"])
+    name = (persona or {}).get("name") or "我"
+    pid_ = (persona or {}).get("id") or ""
+    db.add_like(conn, post_id, "persona", pid_, name)
+    return {"ok": True, "likes": db.list_likes(conn, post_id)}
+
+
+@router.delete("/{post_id}/like")
+def unlike_post(post_id: str, conn=Depends(get_conn)) -> dict:
+    row = db.get_post_row(conn, post_id)
+    if not row:
+        raise ApiError("notfound", "这条动态已经不在了。", status=404)
+    persona = _persona_for(conn, row["character_id"])
+    pid_ = (persona or {}).get("id") or ""
+    db.remove_like(conn, post_id, "persona", pid_)
+    return {"ok": True, "likes": db.list_likes(conn, post_id)}

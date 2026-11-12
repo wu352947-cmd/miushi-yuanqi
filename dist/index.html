@@ -2666,6 +2666,53 @@ html[data-theme="ice"] .tabbar { background: linear-gradient(180deg, rgba(252, 2
    灵动岛就因为这个一直挂着「0% 上下文快满了」，看着像卡住了。 */
 [hidden] { display: none !important; }
 
+/* ---------- 朋友圈点赞 ---------- */
+/* 微信：互动区第一行是「♡ 名字」，名字蓝色，点赞和评论之间有一条浅分线。 */
+.wx-post__likes {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 1px 0;
+}
+.wx-like-heart {
+  color: #576b95;
+  font-size: 13px;
+  line-height: 1.7;
+  flex: none;
+}
+.wx-like-names {
+  color: #576b95;
+  font-size: 13px;
+  line-height: 1.7;
+  word-break: break-all;
+}
+.wx-post__likes + .wx-comment {
+  border-top: 1px solid rgba(0, 0, 0, .055);
+  margin-top: 5px;
+  padding-top: 5px;
+}
+
+.wx-post__menu {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+  margin-left: auto;
+  width: fit-content;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #f2f2f2;
+}
+.wx-post__menu button {
+  border: 0;
+  background: transparent;
+  color: #576b95;
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 16px;
+  cursor: pointer;
+}
+.wx-post__menu button + button { border-left: 1px solid rgba(0, 0, 0, .08); }
+
 /* ---------- 朋友圈配图 ---------- */
 /* 微信是九宫格：1 张给大图，2 张两列，3 张以上三列，全部正方裁切。 */
 .wx-post__imgs {
@@ -13376,6 +13423,7 @@ const DATA = {
      只有「她和我」的动态进聊天上下文，NPC 的只在这里出现。 */
   var circleCache = { characterId: '', posts: [], npcs: [], loaded: false };
   var circleReplyFor = '';   // 哪个帖子展开了评论框
+  var circleMenuFor = '';    // 哪个帖子展开了「赞 / 评论」小菜单
 
   function circleChar() {
     return currentChar();
@@ -13433,6 +13481,15 @@ const DATA = {
       return '<div class="wx-comment"><span class="wx-comment__who">' +
         esc(r.authorName) + '</span>' + esc(r.text) + '</div>';
     }).join('');
+    var likes = post.likes || [];
+    var likedByMe = likes.some(function (l) { return l.authorKind === 'persona'; });
+    var likeRow = likes.length
+      ? '<div class="wx-post__likes"><span class="wx-like-heart">♡</span>' +
+        '<span class="wx-like-names">' +
+        likes.map(function (l) { return esc(l.authorName); }).join('，') +
+        '</span></div>'
+      : '';
+    var menuOpen = circleMenuFor === post.id;
     var imgs = post.images || [];
     var grid = imgs.length
       ? '<div class="wx-post__imgs" data-n="' + imgs.length + '">' +
@@ -13451,9 +13508,19 @@ const DATA = {
         '<div class="wx-post__meta">' +
           '<span class="wx-post__time">' + esc(wxTime(post.at)) + '</span>' +
           '<button class="wx-post__more" type="button" data-a2="circle-more" data-id="' +
-            esc(post.id) + '" aria-label="评论或删除">···</button>' +
+            esc(post.id) + '" aria-label="赞或评论">···</button>' +
         '</div>' +
-        (replies ? '<div class="wx-post__interact">' + replies + '</div>' : '') +
+        (menuOpen
+          ? '<div class="wx-post__menu">' +
+              '<button type="button" data-a2="circle-like" data-id="' + esc(post.id) + '">' +
+                (likedByMe ? '取消' : '赞') +
+              '</button>' +
+              '<button type="button" data-a2="circle-menu-reply" data-id="' + esc(post.id) + '">评论</button>' +
+            '</div>'
+          : '') +
+        ((likes.length || replies)
+          ? '<div class="wx-post__interact">' + likeRow + replies + '</div>'
+          : '') +
         (open
           ? '<div class="wx-post__reply">' +
               '<input type="text" maxlength="200" placeholder="评论" data-reply-for="' + esc(post.id) + '" aria-label="评论">' +
@@ -13501,6 +13568,33 @@ const DATA = {
           '<span class="wx-npc__rel">' + esc(n.relation || '') + '</span>' +
           '<button type="button" data-a2="circle-npc-drop" data-id="' + esc(n.id) + '">删除</button></div>';
       }).join('');
+  }
+
+  function toggleCircleMenu(postId) {
+    circleMenuFor = circleMenuFor === postId ? '' : postId;
+    renderCircleFeed();
+  }
+
+  function circleMenuReply(postId) {
+    circleMenuFor = '';
+    circleReplyFor = postId;
+    renderCircleFeed();
+    var box = document.querySelector('[data-reply-for="' + postId + '"]');
+    if (box) box.focus();
+  }
+
+  function toggleCircleLike(postId) {
+    var post = (circleCache.posts || []).filter(function (p) { return p.id === postId; })[0];
+    var liked = !!(post && (post.likes || []).some(function (l) { return l.authorKind === 'persona'; }));
+    var base = '/moments/' + encodeURIComponent(postId) + '/like';
+    serverFetch(base, { method: liked ? 'DELETE' : 'POST' })
+      .then(function (res) {
+        circleMenuFor = '';
+        if (post && res && res.likes) post.likes = res.likes;
+        renderCircleFeed();
+        toast(liked ? '取消了。' : '赞了。');
+      })
+      .catch(function (err) { toast(err.message || '没点上。'); });
   }
 
   function toggleCircleReply(postId) {
@@ -16529,7 +16623,9 @@ const DATA = {
   function handleA2Action(action, el) {
     if (action === 'circle-compose') { openSheet('circlePost'); return true; }
     if (action === 'circle-publish') { publishCircle(); return true; }
-    if (action === 'circle-more') { toggleCircleReply(el.getAttribute('data-id')); return true; }
+    if (action === 'circle-more') { toggleCircleMenu(el.getAttribute('data-id')); return true; }
+    if (action === 'circle-menu-reply') { circleMenuReply(el.getAttribute('data-id')); return true; }
+    if (action === 'circle-like') { toggleCircleLike(el.getAttribute('data-id')); return true; }
     if (action === 'circle-reply') { circleReply(el.getAttribute('data-id')); return true; }
     if (action === 'circle-drop') { circleDropPost(el.getAttribute('data-id')); return true; }
     if (action === 'circle-npc-drop') { circleDropNpc(el.getAttribute('data-id')); return true; }
