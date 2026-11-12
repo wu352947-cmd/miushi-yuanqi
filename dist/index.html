@@ -4713,6 +4713,10 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
   gap: 8px;
   margin-top: 13px;
 }
+/* 压缩进行中不显示按钮：display:flex 的优先级比 hidden 属性高，得显式写一条 */
+.island__actions[hidden] {
+  display: none;
+}
 .island__btn {
   flex: 1;
   height: 33px;
