@@ -176,3 +176,14 @@ class ImportPayload(BaseModel):
 class ProviderImportIn(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     includeApiKey: bool = False
+
+
+class ChatCompressIn(BaseModel):
+    """压缩：指定用哪个模型、压到预算的多少。都不填就走设置里的默认。"""
+
+    modelId: str | None = None
+    keepRatio: float | None = None
+
+
+class ChatDigestPatch(BaseModel):
+    text: str

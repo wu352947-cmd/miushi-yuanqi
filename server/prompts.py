@@ -269,10 +269,32 @@ def assemble(context: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
+    # 前情摘要：比这段更早的对话已经折叠成一条，替它记住那些事。
+    # 消息本体一条没删，只是不再发出去——所以随时可以撤销重来。
+    digest = context.get("digest") or {}
+    digest_text = str(digest.get("text") or "").strip()
+    digest_upto = int(digest.get("uptoMessageId") or 0)
+    if digest_text:
+        blocks.append(
+            {
+                "kind": "digest",
+                "label": "前情摘要 · 更早的对话已折叠",
+                "role": "system",
+                "text": digest_text,
+            }
+        )
     # 聊天记录 + 深度注入 + 预设后置
     hard_limit = int(sampling.get("context_messages") or 0)
     budget = history_budget(context.get("model"), sampling)
-    history = pick_history(messages, budget, hard_limit)
+    # 已被摘要覆盖的消息不再发出去：它们的内容由上面那条系统块代表。
+    # 没有 id 的（开场白占位）一律保留，不能因为 0 <= upto 被误删。
+    visible = messages
+    if digest_upto:
+        visible = [
+            m for m in messages
+            if not (int(m.get("id") or 0) and int(m.get("id") or 0) <= digest_upto)
+        ]
+    history = pick_history(visible, budget, hard_limit)
     total = len(history)
     insert_before: dict[int, list[dict[str, Any]]] = {}
     for f in depth_frags:
@@ -349,6 +371,8 @@ def assemble(context: dict[str, Any]) -> dict[str, Any]:
             "worldActivated": [e["title"] for e in world["entries"]],
             "worldSkipped": len(world["skipped"]),
             "contextMessages": len(history),
+            "digest": bool(digest_text),
+            "digestTokens": estimate_tokens(digest_text) if digest_text else 0,
             "nowCard": bool(now_text),
             "memoryNotes": max(0, len(memory_lines) - (1 if now_text else 0)),
         },

@@ -881,6 +881,8 @@ async def complete(
                 break
         if "MEMORY_EXTRACT" in last_user:
             return {"text": _mock_extract_json(last_user), "usage": None, "thinking": ""}
+        if "CONTEXT_DIGEST" in last_user:
+            return {"text": _mock_digest_text(), "usage": None, "thinking": ""}
         text, _thinking = _mock_reply(prompt)
         return {"text": text, "usage": None, "thinking": ""}
 
@@ -929,6 +931,19 @@ async def complete(
             text = (choices[0].get("message") or {}).get("content") or ""
         usage = _norm_openai_usage(payload.get("usage") or {}) if payload.get("usage") else None
     return {"text": text, "usage": usage, "thinking": ""}
+
+
+def _mock_digest_text() -> str:
+    """测试用的假摘要：结构照抄真实要求，长度足够过最短校验。"""
+    return (
+        "【时间线】\n"
+        "两人在雨天相遇，随后一起走回家。路上聊到最近的工作和睡眠。\n"
+        "当天晚上一起吃了饭，气氛轻松。\n"
+        "\n【关系】\n"
+        "已经很熟，称呼上不再客气，但还没把话说破。\n"
+        "\n【没讲完的事】\n"
+        "她答应过要给他看一样东西，一直没拿出来。"
+    )
 
 
 def _mock_extract_json(marker_text: str) -> str:

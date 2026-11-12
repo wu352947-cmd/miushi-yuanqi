@@ -20,14 +20,16 @@ from typing import Any, AsyncIterator
 from fastapi import APIRouter, Body, Depends
 from fastapi.responses import StreamingResponse
 
-from .. import auth, db, memory, prompts, providers, usage as usage_mod
+from .. import auth, db, digest as digest_mod, memory, prompts, providers, usage as usage_mod
 from ..errors import ApiError, classify_api_error
 from ..reasoning import build_reasoning_params, default_level
 from ..schemas import (
     ChatBranchIn,
     ChatBulkIn,
     ChatCreateIn,
+    ChatCompressIn,
     ChatDetailPatch,
+    ChatDigestPatch,
     ChatImportIn,
     ChatPatch,
     ChatSendIn,
@@ -104,6 +106,7 @@ def _load_context(
             "preset_source": preset_source,
             "persona_source": persona_source,
             "author_note": author_note,
+            "digest": db.get_digest(conn, ((chat or {}).get("id") or "")),
         }
     )
     return {
@@ -872,3 +875,75 @@ def _frontend_usage(usage: dict[str, Any] | None) -> dict[str, Any]:
         "cache_write_tokens": int(usage.get("cache_write_tokens") or 0),
         "reasoning_tokens": int(usage.get("reasoning_tokens") or 0),
     }
+
+
+# ---------- 上下文压缩 ----------
+# 压缩只改变「发给模型什么」，聊天记录里一条消息都不删，所以随时可撤销。
+
+
+@router.get("/id/{chat_id}/digest")
+def read_chat_digest(chat_id: str, conn=Depends(get_conn)) -> dict:
+    chat = db.chat_full_by_id(conn, chat_id)
+    if not chat:
+        raise ApiError("notfound", "这段对话已经不在了。", status=404)
+    return {"ok": True, "digest": db.get_digest(conn, chat_id)}
+
+
+@router.post("/id/{chat_id}/compress-preview")
+def compress_preview(chat_id: str, conn=Depends(get_conn)) -> dict:
+    """只看能压多少，不调模型、不花钱。"""
+    if not db.chat_full_by_id(conn, chat_id):
+        raise ApiError("notfound", "这段对话已经不在了。", status=404)
+    return digest_mod.preview(chat_id)
+
+
+@router.post("/id/{chat_id}/compress")
+async def compress_chat_route(chat_id: str, payload: ChatCompressIn | None = None, conn=Depends(get_conn)) -> dict:
+    """把最早的一段对话折成摘要。手动触发，不等阈值。"""
+    if not db.chat_full_by_id(conn, chat_id):
+        raise ApiError("notfound", "这段对话已经不在了。", status=404)
+    body = payload or ChatCompressIn()
+    ratio = body.keepRatio if body.keepRatio else digest_mod.DEFAULT_KEEP_RATIO
+    ratio = max(0.1, min(0.9, float(ratio)))
+    result = await digest_mod.compress_chat(
+        chat_id, model_id=body.modelId or "", force=True, keep_ratio=ratio
+    )
+    if not result.get("ok"):
+        if result.get("reason") == "nothing":
+            raise ApiError("badrequest", str(result.get("message") or "这段对话暂时不需要压缩。"))
+        raise ApiError("badrequest", str(result.get("message") or "压缩没有成功。"))
+    return result
+
+
+@router.patch("/id/{chat_id}/digest")
+def patch_chat_digest(chat_id: str, payload: ChatDigestPatch, conn=Depends(get_conn)) -> dict:
+    """手改摘要。改完下一轮立刻生效，不用重新压。"""
+    if not db.chat_full_by_id(conn, chat_id):
+        raise ApiError("notfound", "这段对话已经不在了。", status=404)
+    current = db.get_digest(conn, chat_id)
+    if not current:
+        raise ApiError("badrequest", "这段对话还没压缩过，没有摘要可以改。")
+    text = (payload.text or "").strip()
+    if not text:
+        raise ApiError("badrequest", "摘要不能是空的；想彻底放掉请用「恢复完整历史」。")
+    saved = db.save_digest(
+        conn,
+        chat_id,
+        text,
+        upto_message_id=current["uptoMessageId"],
+        message_count=current.get("messageCount") or 0,
+        source_tokens=current.get("sourceTokens") or 0,
+        digest_tokens=prompts.estimate_tokens(text),
+        model_key=current.get("modelKey") or "",
+        manual=True,
+    )
+    return {"ok": True, "digest": saved}
+
+
+@router.delete("/id/{chat_id}/digest")
+def drop_chat_digest(chat_id: str, conn=Depends(get_conn)) -> dict:
+    """撤销压缩：完整历史重新发出去。"""
+    if not db.chat_full_by_id(conn, chat_id):
+        raise ApiError("notfound", "这段对话已经不在了。", status=404)
+    result = digest_mod.undo_digest(chat_id)
+    return {"ok": True, **result}

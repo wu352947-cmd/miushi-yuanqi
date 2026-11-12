@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - 兜底
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 # --------------------------------------------------------------------------- 路径
@@ -337,6 +337,20 @@ SCHEMA: list[str] = [
       estimated INTEGER NOT NULL DEFAULT 0,
       fallback_reasoning INTEGER NOT NULL DEFAULT 0,
       kind TEXT NOT NULL DEFAULT 'chat'
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS chat_digests (
+      chat_id TEXT PRIMARY KEY,
+      text TEXT NOT NULL DEFAULT '',
+      upto_message_id INTEGER NOT NULL DEFAULT 0,
+      message_count INTEGER NOT NULL DEFAULT 0,
+      source_tokens INTEGER NOT NULL DEFAULT 0,
+      digest_tokens INTEGER NOT NULL DEFAULT 0,
+      model_key TEXT NOT NULL DEFAULT '',
+      manual INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_usage_at ON usage(at)",
@@ -1689,3 +1703,80 @@ def migrate_local_state(conn, state: dict[str, Any], include_keys: bool = False)
             )
     result["settings"] = 1
     return result
+
+
+# ---------- 上下文压缩：滚动摘要 ----------
+# 摘要覆盖 upto_message_id（含）之前的所有消息：
+# 这些消息不再发给模型，改成一条 system 块。
+# 用 id 而不是「条数」记录进度，是因为消息可能被删、被分支，
+# 条数会错位，id 不会。
+
+
+def digest_json(row) -> dict[str, Any]:
+    if not row:
+        return {}
+    return {
+        "chatId": row["chat_id"],
+        "text": row["text"],
+        "uptoMessageId": int(row["upto_message_id"] or 0),
+        "messageCount": int(row["message_count"] or 0),
+        "sourceTokens": int(row["source_tokens"] or 0),
+        "digestTokens": int(row["digest_tokens"] or 0),
+        "modelKey": row["model_key"],
+        "manual": bool(row["manual"]),
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+
+
+def get_digest(conn, chat_id: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT * FROM chat_digests WHERE chat_id = ?", (chat_id,)
+    ).fetchone()
+    if not row:
+        return None
+    out = digest_json(row)
+    return out if out.get("text") else None
+
+
+def save_digest(
+    conn,
+    chat_id: str,
+    text: str,
+    upto_message_id: int,
+    message_count: int = 0,
+    source_tokens: int = 0,
+    digest_tokens: int = 0,
+    model_key: str = "",
+    manual: bool = False,
+) -> dict[str, Any]:
+    now = now_iso()
+    existing = conn.execute(
+        "SELECT created_at FROM chat_digests WHERE chat_id = ?", (chat_id,)
+    ).fetchone()
+    created = existing["created_at"] if existing else now
+    conn.execute(
+        "INSERT OR REPLACE INTO chat_digests "
+        "(chat_id, text, upto_message_id, message_count, source_tokens, "
+        " digest_tokens, model_key, manual, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            chat_id,
+            text,
+            int(upto_message_id),
+            int(message_count),
+            int(source_tokens),
+            int(digest_tokens),
+            model_key,
+            1 if manual else 0,
+            created,
+            now,
+        ),
+    )
+    row = conn.execute("SELECT * FROM chat_digests WHERE chat_id = ?", (chat_id,)).fetchone()
+    return digest_json(row)
+
+
+def delete_digest(conn, chat_id: str) -> bool:
+    cur = conn.execute("DELETE FROM chat_digests WHERE chat_id = ?", (chat_id,))
+    return cur.rowcount > 0
