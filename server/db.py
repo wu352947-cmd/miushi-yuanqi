@@ -423,8 +423,6 @@ SCHEMA: list[str] = [
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_likes_unique "
     "ON post_likes(post_id, author_kind, author_id)",
     "CREATE INDEX IF NOT EXISTS idx_npcs_char ON circle_npcs(character_id)",
-    "CREATE INDEX IF NOT EXISTS idx_npcs_bond ON circle_npcs(bond_id)",
-    "CREATE INDEX IF NOT EXISTS idx_posts_bond ON posts(bond_id, at)",
     "CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, id)",
     "CREATE INDEX IF NOT EXISTS idx_entries_book ON world_book_entries(book_id, ord)",
     "CREATE INDEX IF NOT EXISTS idx_chats_char ON chats(character_id)",
@@ -537,6 +535,9 @@ def _migrate(conn, current: int) -> None:
             ).fetchone()
             if bond:
                 conn.execute("UPDATE posts SET bond_id = ? WHERE id = ?", (bond["id"], post["id"]))
+        # 索引必须等列加好之后再建（所以不能放在 SCHEMA 里）
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_npcs_bond ON circle_npcs(bond_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_bond ON posts(bond_id, at)")
     if current < 8:
         # v8：朋友圈配图。库里只留路径数组，图片本体在 data/uploads/ 下，
         # 这样每 5 分钟整体复制的同步层不会因为图片变重。
