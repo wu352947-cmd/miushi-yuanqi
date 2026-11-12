@@ -79,7 +79,9 @@ def _once(req, path: str, timeout: int) -> dict:
         if isinstance(data, dict):
             return data
         raise ApiError("badgateway", "音乐服务返回了看不懂的内容。", status=502) from exc
-    except urllib.error.URLError as exc:
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        # urlopen 超时抛的是 socket.timeout / TimeoutError，不是 URLError，
+        # 单独漏接会让它掉进最后的通用分支，连重试都触发不了。
         LOG.warning("网易云接口不通（%s）：%s", path, exc)
         raise ApiError("badgateway", "音乐服务暂时连不上。", status=502) from exc
     except Exception as exc:  # noqa: BLE001
