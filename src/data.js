@@ -26,6 +26,7 @@ const DATA = {
 
   pages: [
     { key: "home", name: "首页" },
+    { key: "wx", name: "微信" },
     { key: "chat", name: "聊天" },
     { key: "memory", name: "记忆" },
     { key: "listen", name: "一起听" },
