@@ -17,7 +17,7 @@ const DATA = {
       label: "冰蓝",
       quote: "窗上起了雾，替你在玻璃上写了一个字。",
       pages: {
-        home: "wp09", chat: "wp12", memory: "wp08", listen: "wp09", me: "wp11",
+        home: "wp09", chat: "wp12", circle: "wp09", memory: "wp08", listen: "wp09", me: "wp11",
         settings: "wp16", characters: "wp16", personas: "wp11", books: "wp12",
         providers: "wp16", presets: "wp10", stats: "wp12"
       }
@@ -29,6 +29,7 @@ const DATA = {
     { key: "chat", name: "聊天" },
     { key: "memory", name: "记忆" },
     { key: "listen", name: "一起听" },
+    { key: "circle", name: "朋友圈" },
     { key: "me", name: "我的" },
     { key: "settings", name: "设置" },
     { key: "characters", name: "角色库" },

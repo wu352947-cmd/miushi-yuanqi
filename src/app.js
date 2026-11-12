@@ -1630,6 +1630,7 @@
     if (view === 'memory') { renderMemories(); refreshMemoriesQuiet(); }
     if (view === 'me') renderMe();
     if (view === 'listen') renderListen();
+    if (view === 'circle') renderCircle();
     if (view === 'settings') renderSettings();
     if (view === 'characters') renderCharLibrary();
     if (view === 'personas') renderPersonaLibrary();
@@ -2202,6 +2203,159 @@
     return '<span class="song-row__cover" aria-hidden="true"><img src="' + url + '" alt="" decoding="async" referrerpolicy="no-referrer"' +
       ' data-cover-base="' + esc(base) + '" data-cover-attempt="0"' +
       ' onerror="window.d2CoverError&&window.d2CoverError(this)"></span>';
+  }
+
+  /* ---------- 朋友圈 ----------
+     每个角色一套独立世界：她发的、我发的、这世界里 NPC 发的。
+     只有「她和我」的动态进聊天上下文，NPC 的只在这里出现。 */
+  var circleCache = { characterId: '', posts: [], npcs: [], loaded: false };
+
+  function circleChar() {
+    return currentChar();
+  }
+
+  function circleInitial(name) {
+    var n = String(name || '?').trim();
+    return n ? n.slice(0, 1) : '?';
+  }
+
+  function renderCircle() {
+    var char = circleChar();
+    var title = document.getElementById('circleTitle');
+    var sub = document.getElementById('circleSub');
+    if (title) title.textContent = char ? (char.name + '的朋友圈') : '朋友圈';
+    if (sub) sub.textContent = circleCache.npcs.length
+      ? '这个圈子里有 ' + circleCache.npcs.length + ' 个人'
+      : '她身边发生的事';
+    var me = document.getElementById('circleMeAvatar');
+    if (me) me.textContent = circleInitial((state.userPersonas[0] || {}).name || '我');
+    renderCircleFeed();
+    if (char) loadCircle();
+  }
+
+  function loadCircle() {
+    var char = circleChar();
+    if (!char) return Promise.resolve();
+    var cid = char.id;
+    return serverFetch('/api/moments?character_id=' + encodeURIComponent(cid))
+      .then(function (res) {
+        // 切角色太快时旧请求会晚到，丢掉
+        if (circleChar() && circleChar().id === cid) {
+          circleCache = {
+            characterId: cid,
+            posts: (res && res.posts) || [],
+            npcs: (res && res.npcs) || [],
+            loaded: true
+          };
+          renderCircle();
+        }
+        return res;
+      })
+      .catch(function (err) { toast(err.message || '朋友圈没加载出来。'); });
+  }
+
+  function circlePostHtml(post) {
+    var mine = post.authorKind === 'persona';
+    var npc = post.authorKind === 'npc';
+    var tag = mine ? '我' : (npc ? '朋友' : '她');
+    var replies = (post.replies || []).map(function (r) {
+      return '<div class="circle-reply"><span class="circle-reply__who">' +
+        esc(r.authorName) + '</span><span class="circle-reply__text">' + esc(r.text) + '</span></div>';
+    }).join('');
+    return '<article class="circle-post' + (mine ? ' is-mine' : '') + (npc ? ' is-npc' : '') + '">' +
+      '<div class="circle-post__head">' +
+        '<span class="circle-post__avatar">' + esc(circleInitial(post.authorName)) + '</span>' +
+        '<span class="circle-post__who"><b>' + esc(post.authorName) + '</b>' +
+        '<span class="circle-post__meta">' + esc(String(post.at || '').slice(5, 16).replace('T', ' ')) +
+        ' · ' + tag + '</span></span>' +
+      '</div>' +
+      '<p class="circle-post__text">' + esc(post.text) + '</p>' +
+      (replies ? '<div class="circle-post__replies">' + replies + '</div>' : '') +
+      '<div class="circle-post__foot">' +
+        '<input class="circle-reply__input" type="text" maxlength="200" placeholder="评论…" ' +
+          'data-reply-for="' + esc(post.id) + '" aria-label="评论">' +
+        '<button class="mini-btn" type="button" data-a2="circle-reply" data-id="' + esc(post.id) + '">发送</button>' +
+        '<button class="mini-btn mini-btn--ghost" type="button" data-a2="circle-drop" data-id="' + esc(post.id) + '">删</button>' +
+      '</div>' +
+    '</article>';
+  }
+
+  function renderCircleFeed() {
+    var box = document.getElementById('circleFeed');
+    if (!box) return;
+    if (!circleCache.posts.length) {
+      box.innerHTML = '<p class="circle-empty">' +
+        (circleCache.loaded ? '还没有动态。聊几句，她会自己发一条。' : '加载中…') + '</p>';
+    } else {
+      box.innerHTML = circleCache.posts.map(circlePostHtml).join('');
+    }
+    var npcBox = document.getElementById('circleNpcs');
+    if (!npcBox) return;
+    if (!circleCache.npcs.length) {
+      npcBox.innerHTML = '';
+      return;
+    }
+    npcBox.innerHTML = '<p class="circle-npcs__title">这个圈子里的人</p>' +
+      circleCache.npcs.map(function (n) {
+        return '<div class="circle-npc">' +
+          '<span class="circle-npc__name">' + esc(n.name) + '</span>' +
+          '<span class="circle-npc__rel">' + esc(n.relation || '') + '</span>' +
+          '<button class="mini-btn mini-btn--ghost" type="button" data-a2="circle-npc-drop" data-id="' +
+            esc(n.id) + '">删</button></div>';
+      }).join('');
+  }
+
+  function publishCircle() {
+    var char = circleChar();
+    var input = document.getElementById('circleInput');
+    var text = (input && input.value || '').trim();
+    if (!char) { toast('先选一个角色。'); return; }
+    if (!text) { toast('写点什么再发。'); return; }
+    serverFetch('/api/moments', { method: 'POST', body: { characterId: char.id, text: text } })
+      .then(function () {
+        if (input) input.value = '';
+        toast('发出去了。');
+        return loadCircle();
+      })
+      .catch(function (err) { toast(err.message || '没发出去。'); });
+  }
+
+  function circleReply(postId) {
+    var input = document.querySelector('[data-reply-for="' + postId + '"]');
+    var text = (input && input.value || '').trim();
+    if (!text) return;
+    serverFetch('/api/moments/' + encodeURIComponent(postId) + '/replies', {
+      method: 'POST',
+      body: { text: text }
+    }).then(function () {
+      if (input) input.value = '';
+      return loadCircle();
+    }).catch(function (err) { toast(err.message || '评论没发出去。'); });
+  }
+
+  function circleDropPost(postId) {
+    serverFetch('/api/moments/' + encodeURIComponent(postId), { method: 'DELETE' })
+      .then(function () { toast('删掉了。'); return loadCircle(); })
+      .catch(function (err) { toast(err.message || '没删掉。'); });
+  }
+
+  function circleDropNpc(npcId) {
+    serverFetch('/api/moments/npcs/' + encodeURIComponent(npcId), { method: 'DELETE' })
+      .then(function () { toast('删掉了。'); return loadCircle(); })
+      .catch(function (err) { toast(err.message || '没删掉。'); });
+  }
+
+  function generateCirclePost() {
+    var char = circleChar();
+    if (!char) { toast('先选一个角色。'); return; }
+    toast('让她想一想…');
+    serverFetch('/api/moments/generate?character_id=' + encodeURIComponent(char.id), {
+      method: 'POST',
+      body: {}
+    }).then(function () {
+      toast('她发了一条。');
+      return loadCircle();
+    }).catch(function (err) { toast(err.message || '这次没写出来。'); });
   }
 
   function renderListen() {
@@ -4904,6 +5058,11 @@
 
   /* ---------------- A2 交互分发 ---------------- */
   function handleA2Action(action, el) {
+    if (action === 'circle-publish') { publishCircle(); return true; }
+    if (action === 'circle-reply') { circleReply(el.getAttribute('data-id')); return true; }
+    if (action === 'circle-drop') { circleDropPost(el.getAttribute('data-id')); return true; }
+    if (action === 'circle-npc-drop') { circleDropNpc(el.getAttribute('data-id')); return true; }
+    if (action === 'circle-generate') { generateCirclePost(); return true; }
     if (action === 'ctx-open') { openContextSheet(); return true; }
     if (action === 'ctx-run') { closeSheet(); runCompress(); return true; }
     if (action === 'ctx-digest') { openSheet('digest'); return true; }

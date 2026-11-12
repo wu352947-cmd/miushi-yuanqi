@@ -336,6 +336,31 @@
         </section>
 
         <!-- ④ 一起听 -->
+        <section class="view view--circle" data-view="circle" aria-label="朋友圈">
+          <div class="circle-scroll">
+            <header class="page-head">
+              <h1 class="page-title serif" id="circleTitle">朋友圈</h1>
+              <p class="page-sub" id="circleSub">她身边发生的事</p>
+            </header>
+
+            <div class="circle-compose">
+              <div class="circle-compose__avatar" id="circleMeAvatar" aria-hidden="true"></div>
+              <div class="circle-compose__main">
+                <textarea id="circleInput" class="circle-compose__input" rows="2"
+                  placeholder="说点什么…" aria-label="发朋友圈"></textarea>
+                <div class="circle-compose__actions">
+                  <button class="mini-btn" type="button" data-a2="circle-generate">让她也发一条</button>
+                  <button class="btn btn--primary circle-compose__send" type="button" data-a2="circle-publish">发布</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="circle-feed" id="circleFeed"></div>
+
+            <div class="circle-npcs" id="circleNpcs"></div>
+          </div>
+        </section>
+
         <section class="view view--listen" data-view="listen" aria-label="一起听">
           <header class="appbar">
             <button class="round-btn" type="button" data-open="menu" aria-label="菜单">
@@ -683,6 +708,10 @@
         <button class="tab" type="button" data-nav="listen" aria-current="false">
           <span class="tab__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.2" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="12" r="2.4" stroke="currentColor" stroke-width="1.4"/><path d="M6.6 7.8a7.4 7.4 0 0 1 2.4-1.9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".7"/></svg></span>
           <span class="tab__label">一起听</span>
+        </button>
+        <button class="tab" type="button" data-nav="circle" aria-current="false">
+          <span class="tab__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4.2" y="6.4" width="15.6" height="12" rx="2.4" stroke="currentColor" stroke-width="1.4"/><path d="M4.2 15.2l4.2-3.4 3.4 2.8 2.6-2 5 4" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="15.4" cy="9.8" r="1.2" stroke="currentColor" stroke-width="1.2"/></svg></span>
+          <span class="tab__label">朋友圈</span>
         </button>
         <button class="tab" type="button" data-nav="me" aria-current="false">
           <span class="tab__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8.6" r="3.5" stroke="currentColor" stroke-width="1.4"/><path d="M5.6 19.4c.8-3.4 3.2-5.2 6.4-5.2s5.6 1.8 6.4 5.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
