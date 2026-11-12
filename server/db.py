@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - 兜底
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 # --------------------------------------------------------------------------- 路径
@@ -429,6 +429,17 @@ SCHEMA: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_chats_character_lookup ON chats(character_id)",
     "CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status, updated_at)",
     "CREATE INDEX IF NOT EXISTS idx_bonds_pair ON bonds(persona_id, character_id)",
+    """
+    CREATE TABLE IF NOT EXISTS music_auth (
+      key TEXT PRIMARY KEY,
+      cookie_enc TEXT NOT NULL DEFAULT '',
+      user_id TEXT NOT NULL DEFAULT '',
+      nickname TEXT NOT NULL DEFAULT '',
+      avatar TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL
+    )
+    """,
+
 ]
 
 
@@ -1191,6 +1202,32 @@ def get_now_row(conn, character_id: str = "", persona_id: str = "") -> sqlite3.R
 
 
 # --------------------------------------------------------------------------- 关系（bonds）
+def music_auth_row(conn) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM music_auth WHERE key = 'netease'").fetchone()
+
+
+def save_music_auth(
+    conn, cookie_enc: str, user_id: str = "", nickname: str = "", avatar: str = ""
+) -> None:
+    conn.execute(
+        "INSERT INTO music_auth (key, cookie_enc, user_id, nickname, avatar, updated_at)"
+        " VALUES ('netease', ?, ?, ?, ?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET"
+        " cookie_enc = excluded.cookie_enc,"
+        " user_id = excluded.user_id,"
+        " nickname = excluded.nickname,"
+        " avatar = excluded.avatar,"
+        " updated_at = excluded.updated_at",
+        (cookie_enc, user_id, nickname, avatar, now_iso()),
+    )
+    conn.commit()
+
+
+def clear_music_auth(conn) -> None:
+    conn.execute("DELETE FROM music_auth WHERE key = 'netease'")
+    conn.commit()
+
+
 def bond_json(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
