@@ -107,6 +107,7 @@ def _load_context(
             "persona_source": persona_source,
             "author_note": author_note,
             "digest": db.get_digest(conn, ((chat or {}).get("id") or "")),
+            "context_budget": int((config.get("settings") or {}).get("contextBudget") or 0),
         }
     )
     return {

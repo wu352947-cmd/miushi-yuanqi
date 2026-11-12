@@ -494,6 +494,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "defaultPresetId": "",
         "memoryExtractEnabled": True,
         "memoryExtractEvery": 4,
+        # 历史最多带多少 token。超过这个数，老消息会被挤出上下文；
+        # 压缩也以它为基准算百分比。0 = 用默认 32000。
+        "contextBudget": 32000,
     },
 }
 

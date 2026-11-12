@@ -226,7 +226,9 @@ def preview(chat_id: str, keep_ratio: float = DEFAULT_KEEP_RATIO) -> dict[str, A
             chat, character, presets, settings.get("defaultPresetId") or ""
         )
         sampling = prompts._sampling(preset)
-        budget = prompts.history_budget(chat_model, sampling)
+        budget = prompts.history_budget(
+            chat_model, sampling, int(settings.get("contextBudget") or 0)
+        )
         current = db.get_digest(conn, chat_id)
         try:
             th = float(settings.get("contextThreshold") or 75)
@@ -293,7 +295,9 @@ async def compress_chat(
         presets = [db.preset_json(r) for r in conn.execute("SELECT * FROM prompt_presets").fetchall()]
         preset, _ = prompts.resolve_preset(chat, character, presets, settings.get("defaultPresetId") or "")
         sampling = prompts._sampling(preset)
-        budget = prompts.history_budget(chat_model, sampling)
+        budget = prompts.history_budget(
+            chat_model, sampling, int(settings.get("contextBudget") or 0)
+        )
 
         digest = db.get_digest(conn, chat_id)
         try:

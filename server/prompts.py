@@ -49,7 +49,9 @@ def estimate_tokens(text: str) -> int:
     return max(1, int(math.ceil(len(text) / 1.6)))
 
 
-def history_budget(model: dict[str, Any] | None, sampling: dict[str, Any]) -> int:
+def history_budget(
+    model: dict[str, Any] | None, sampling: dict[str, Any], override: int = 0
+) -> int:
     """历史能占多少 token。
 
     两层限制，取小的：
@@ -60,7 +62,9 @@ def history_budget(model: dict[str, Any] | None, sampling: dict[str, Any]) -> in
     reserve = max(1024, int(sampling.get("max_tokens") or 1200))
     usable = max(1024, window - reserve)
     ratio_cap = int(usable * 0.6)
-    user_cap = int(sampling.get("context_budget") or 0) or 32000
+    # override 是用户在设置里调的上限，优先于预设里的默认值——
+    # 预设编辑界面没有采样参数，那个值实际上改不动，只能当兜底。
+    user_cap = int(override or sampling.get("context_budget") or 0) or 32000
     return max(1024, min(user_cap, ratio_cap))
 
 
@@ -285,7 +289,9 @@ def assemble(context: dict[str, Any]) -> dict[str, Any]:
         )
     # 聊天记录 + 深度注入 + 预设后置
     hard_limit = int(sampling.get("context_messages") or 0)
-    budget = history_budget(context.get("model"), sampling)
+    budget = history_budget(
+        context.get("model"), sampling, int(context.get("context_budget") or 0)
+    )
     # 已被摘要覆盖的消息不再发出去：它们的内容由上面那条系统块代表。
     # 没有 id 的（开场白占位）一律保留，不能因为 0 <= upto 被误删。
     visible = messages

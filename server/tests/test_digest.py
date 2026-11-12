@@ -156,7 +156,7 @@ def _latest_chat_id():
 def test_compress_api_roundtrip(client, monkeypatch):
     monkeypatch.setenv("MSYQ_MOCK", "1")
     # 把预算压小，否则 32K 预算下测试要写几万字才到阈值
-    monkeypatch.setattr("server.prompts.history_budget", lambda model, sampling: 3000)
+    monkeypatch.setattr("server.prompts.history_budget", lambda model, sampling, override=0: 3000)
 
     for i in range(6):
         chat_events(client, ("第%d句 " % i) + "把这段对话撑长一点，好让压缩有东西可压。" * 25)
@@ -206,7 +206,7 @@ def test_compress_api_roundtrip(client, monkeypatch):
 def test_compress_rejects_short_chat(client, monkeypatch):
     """短对话不该被压——不能为了让功能「有反应」就硬压。"""
     monkeypatch.setenv("MSYQ_MOCK", "1")
-    monkeypatch.setattr("server.prompts.history_budget", lambda model, sampling: 3000)
+    monkeypatch.setattr("server.prompts.history_budget", lambda model, sampling, override=0: 3000)
     chat_events(client, "就说一句。")
     chat_id = _latest_chat_id()
     r = client.post("/api/chats/id/%s/compress" % chat_id, json={})
@@ -217,7 +217,7 @@ def test_compress_rejects_short_chat(client, monkeypatch):
 def test_compress_preserves_messages(client, monkeypatch):
     """压缩只改「发给模型什么」，聊天记录一条都不能少。"""
     monkeypatch.setenv("MSYQ_MOCK", "1")
-    monkeypatch.setattr("server.prompts.history_budget", lambda model, sampling: 3000)
+    monkeypatch.setattr("server.prompts.history_budget", lambda model, sampling, override=0: 3000)
     for i in range(6):
         chat_events(client, ("第%d句 " % i) + "把这段对话撑长一点，好让压缩有东西可压。" * 25)
     chat_id = _latest_chat_id()
