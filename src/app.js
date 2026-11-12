@@ -1796,25 +1796,71 @@
     }).join('');
   }
 
+  var wxSearchQuery = '';
+  function wxContactRow(r) {
+    return '<button class="wx-row" type="button" ' + r.attr + '>' +
+      r.ava +
+      '<span class="wx-row__main">' +
+        '<span class="wx-row__top"><span class="wx-row__name">' + esc(r.name) + '</span></span>' +
+        '<span class="wx-row__sub">' + esc(r.sub || '') + '</span>' +
+      '</span>' +
+    '</button>';
+  }
+  function wxGroupHtml(title, rows) {
+    if (!rows.length) return '';
+    return '<p class="wx-rows__head">' + esc(title) + '</p>' + rows.map(wxContactRow).join('');
+  }
   function renderWxContacts() {
     var box = document.getElementById('wxContacts');
     if (!box) return;
+    var q = wxSearchQuery.trim().toLowerCase();
+    function hit(name) {
+      return !q || String(name || '').toLowerCase().indexOf(q) >= 0;
+    }
+
     var chars = (state.characters || []).slice().sort(function (a, b) {
       return String(a.name || '').localeCompare(String(b.name || ''), 'zh');
+    }).filter(function (c) { return hit(c.name); });
+
+    var chatting = [];
+    var idle = [];
+    chars.forEach(function (c) {
+      var chat = state.chats[c.id];
+      var msgs = (chat && chat.messages) || [];
+      var last = msgs.length ? msgs[msgs.length - 1] : null;
+      var talked = msgs.length > 0;
+      var sub = talked
+        ? String((last && last.text) || '').replace(/\s+/g, ' ').slice(0, 28)
+        : (String(c.desc || '').replace(/\s+/g, ' ').slice(0, 28) || '还没说过话');
+      (talked ? chatting : idle).push({
+        name: c.name,
+        sub: sub,
+        attr: 'data-wx-contact="' + esc(c.id) + '"',
+        ava: wxAva(c, 'wx-row__ava')
+      });
     });
-    if (!chars.length) {
-      box.innerHTML = '<p class="wx-empty">还没有角色。</p>';
+
+    var npcs = (circleCache.npcs || []).filter(function (n) {
+      return hit(n.name);
+    }).map(function (n) {
+      return {
+        name: n.name,
+        sub: [n.relation, n.note].filter(Boolean).join(' · ') || '剧情里出现过',
+        attr: 'data-wx-npc="' + esc(n.id || n.name) + '" data-name="' + esc(n.name) + '"',
+        ava: wxAva({ name: n.name }, 'wx-row__ava')
+      };
+    });
+
+    var html = wxGroupHtml('正在聊的', chatting) +
+      wxGroupHtml('还没聊过', idle) +
+      wxGroupHtml('剧情里的人', npcs);
+
+    if (!html) {
+      box.innerHTML = '<p class="wx-empty">' +
+        (q ? '没有找到「' + esc(wxSearchQuery) + '」。' : '还没有角色。') + '</p>';
       return;
     }
-    box.innerHTML = chars.map(function (c) {
-      return '<button class="wx-row" type="button" data-wx-contact="' + esc(c.id) + '">' +
-        wxAva(c, 'wx-row__ava') +
-        '<span class="wx-row__main">' +
-          '<span class="wx-row__top"><span class="wx-row__name">' + esc(c.name) + '</span></span>' +
-          '<span class="wx-row__sub">' + esc(String(c.desc || '').slice(0, 34)) + '</span>' +
-        '</span>' +
-      '</button>';
-    }).join('');
+    box.innerHTML = html;
   }
 
   function renderWx() {
@@ -1856,11 +1902,23 @@
     document.addEventListener('click', function (e) {
       var tab = e.target.closest('[data-wx-tab]');
       if (tab) { e.preventDefault(); wxTab(tab.getAttribute('data-wx-tab')); return; }
+      var npcRow = e.target.closest('[data-wx-npc]');
+      if (npcRow) {
+        e.preventDefault();
+        openProfile('npc', npcRow.getAttribute('data-wx-npc'), npcRow.getAttribute('data-name'));
+        return;
+      }
       var row = e.target.closest('[data-wx-chat]') || e.target.closest('[data-wx-contact]');
       if (row) {
         e.preventDefault();
         var id = row.getAttribute('data-wx-chat') || row.getAttribute('data-wx-contact');
         if (id) startChatWith(id);
+      }
+    });
+    document.addEventListener('input', function (e) {
+      if (e.target && e.target.id === 'wxSearch') {
+        wxSearchQuery = e.target.value || '';
+        renderWxContacts();
       }
     });
   })();
