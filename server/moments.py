@@ -112,23 +112,44 @@ def _resolve_model(conn):
     return None, err or "还没有可用的模型。"
 
 
-def _today_count(conn, character_id: str, author_kind: str) -> int:
+def _bond_for(conn, character_id: str, persona_id: str) -> str:
+    """一段关系的 id。朋友圈、NPC、每日配额都挂在它上面。
+
+    同一个人设换了角色、同一个角色换个人设，都是不同的 bond——
+    也就是不同的世界。
+    """
+    if not character_id:
+        return ""
+    row = conn.execute(
+        "SELECT id FROM bonds WHERE character_id = ? AND persona_id = ?",
+        (character_id, persona_id or ""),
+    ).fetchone()
+    return row["id"] if row else ""
+
+
+def _today_count(conn, bond_id: str, author_kind: str) -> int:
     return conn.execute(
         "SELECT COUNT(*) AS n FROM posts "
-        "WHERE character_id = ? AND author_kind = ? AND date(at) = date('now', 'localtime')",
-        (character_id, author_kind),
+        "WHERE bond_id = ? AND author_kind = ? AND date(at) = date('now', 'localtime')",
+        (bond_id, author_kind),
     ).fetchone()["n"]
 
 
-def recent_for_prompt(conn, character_id: str, limit: int = PROMPT_POSTS) -> list[dict[str, Any]]:
+def recent_for_prompt(
+    conn, character_id: str, persona_id: str = "", limit: int = PROMPT_POSTS
+) -> list[dict[str, Any]]:
     """进上下文的那几条：只要她和我发的，NPC 的不带。
 
     NPC 的话零碎、且和「她是谁」无关，带进去只会稀释注意力。
+    按 bond 取——换个人设就是另一个世界，不能让她看到别人的朋友圈。
     """
+    bond_id = _bond_for(conn, character_id, persona_id)
+    if not bond_id:
+        return []
     rows = conn.execute(
-        "SELECT * FROM posts WHERE character_id = ? AND author_kind IN ('character', 'persona') "
+        "SELECT * FROM posts WHERE bond_id = ? AND author_kind IN ('character', 'persona') "
         "ORDER BY at DESC, created_at DESC LIMIT ?",
-        (character_id, int(limit)),
+        (bond_id, int(limit)),
     ).fetchall()
     out = []
     for r in reversed(rows):  # 正序给模型看
@@ -205,10 +226,13 @@ async def extract_circle_npcs(chat_id: str) -> list[dict[str, Any]]:
         if not chat:
             return []
         character_id = chat.get("characterId") or ""
+        bond_id = _bond_for(conn, character_id, chat.get("personaId") or "")
+        if not bond_id:
+            return []
         char_name, user_name, _desc, body = _chat_context(conn, chat_id, limit=10)
         if not body:
             return []
-        existing = [n["name"] for n in db.list_npcs(conn, character_id)]
+        existing = [n["name"] for n in db.list_npcs(conn, bond_id)]
         model, err = _resolve_model(conn)
         if not model:
             return []
@@ -259,7 +283,7 @@ async def extract_circle_npcs(chat_id: str) -> list[dict[str, Any]]:
                 continue
             if name in existing:
                 continue
-            npc = db.upsert_npc(conn, character_id, name, relation)
+            npc = db.upsert_npc(conn, bond_id, character_id, name, relation)
             if npc:
                 added.append(npc)
                 existing.append(name)
@@ -273,27 +297,22 @@ async def compose_character_post(chat_id: str) -> dict[str, Any]:
         if not chat:
             return {"ok": False, "message": "这段对话不在了。"}
         character_id = chat.get("characterId") or ""
-        if _today_count(conn, character_id, "character") >= DAILY_CHARACTER_LIMIT:
+        bond_id = _bond_for(conn, character_id, chat.get("personaId") or "")
+        if not bond_id:
+            return {"ok": False, "message": "这段关系还没建立起来。", "skipped": True}
+        if _today_count(conn, bond_id, "character") >= DAILY_CHARACTER_LIMIT:
             return {"ok": False, "message": "今天已经发过了。", "skipped": True}
         char_name, user_name, desc, body = _chat_context(conn, chat_id, limit=12)
         if not body:
             return {"ok": False, "message": "还没有可写的素材。", "skipped": True}
-        recent = db.list_posts(conn, character_id, limit=3)
-        npcs = db.list_npcs(conn, character_id)
+        recent = db.list_posts(conn, bond_id, limit=3)
+        npcs = db.list_npcs(conn, bond_id)
         model, err = _resolve_model(conn)
         if not model:
             return {"ok": False, "message": err or "还没有可用的模型。"}
         provider_row = db.get_provider_row(conn, model.get("providerId") or "")
         provider = db.provider_json(provider_row) if provider_row else None
         api_key = auth.provider_api_key(conn, model.get("providerId") or "")
-        bond_id = ""
-        if chat.get("personaId"):
-            row = conn.execute(
-                "SELECT id FROM bonds WHERE character_id = ? AND persona_id = ?",
-                (character_id, chat.get("personaId")),
-            ).fetchone()
-            if row:
-                bond_id = row["id"]
 
     if not provider:
         return {"ok": False, "message": "这个模型的提供商不在列表里了。"}
@@ -348,17 +367,24 @@ async def compose_character_post(chat_id: str) -> dict[str, Any]:
     return {"ok": True, "post": post}
 
 
-async def npc_post(character_id: str) -> dict[str, Any]:
-    """让某个 NPC 发一条。从该角色世界自己的 NPC 里挑。"""
+async def npc_post(chat_id: str) -> dict[str, Any]:
+    """让某个 NPC 发一条。从这个世界的 NPC 里挑。"""
     with db.get_db() as conn:
-        npcs = [n for n in db.list_npcs(conn, character_id) if n.get("relation")]
+        chat = db.chat_full_by_id(conn, chat_id)
+        if not chat:
+            return {"ok": False, "message": "这段对话不在了。"}
+        character_id = chat.get("characterId") or ""
+        bond_id = _bond_for(conn, character_id, chat.get("personaId") or "")
+        if not bond_id:
+            return {"ok": False, "message": "这段关系还没建立起来。", "skipped": True}
+        npcs = [n for n in db.list_npcs(conn, bond_id) if n.get("relation")]
         if not npcs:
             return {"ok": False, "message": "还没有认识的人。", "skipped": True}
-        if _today_count(conn, character_id, "npc") >= DAILY_NPC_LIMIT:
+        if _today_count(conn, bond_id, "npc") >= DAILY_NPC_LIMIT:
             return {"ok": False, "message": "今天 NPC 已经发过了。", "skipped": True}
         character = db.get_character(conn, character_id) or {}
         char_name = character.get("name") or "她"
-        recent = db.list_posts(conn, character_id, limit=4)
+        recent = db.list_posts(conn, bond_id, limit=4)
         model, err = _resolve_model(conn)
         if not model:
             return {"ok": False, "message": err or "还没有可用的模型。"}
@@ -531,7 +557,8 @@ async def maybe_comment(post_id: str) -> dict[str, Any]:
         if not row:
             return {"ok": False, "message": "这条动态不在了。"}
         character_id = row["character_id"]
-        npcs = [n for n in db.list_npcs(conn, character_id) if n.get("relation")]
+        bond_id = str(row["bond_id"] or "")
+        npcs = [n for n in db.list_npcs(conn, bond_id) if n.get("relation")]
         if not npcs:
             return {"ok": False, "message": "还没有认识的人。", "skipped": True}
         character = db.get_character(conn, character_id) or {}
@@ -592,10 +619,7 @@ def schedule_after_reply(chat_id: str, force: bool = False) -> None:
             made = await compose_character_post(chat_id)
             if made.get("ok") and made.get("post"):
                 await maybe_comment(made["post"]["id"])
-            with db.get_db() as conn:
-                chat = db.chat_full_by_id(conn, chat_id)
-                if chat:
-                    await npc_post(chat.get("characterId") or "")
+            await npc_post(chat_id)
         except Exception:  # noqa: BLE001
             LOG.exception("朋友圈后台任务出错")
 

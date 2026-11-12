@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - 兜底
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 # --------------------------------------------------------------------------- 路径
@@ -395,6 +395,7 @@ SCHEMA: list[str] = [
     """
     CREATE TABLE IF NOT EXISTS circle_npcs (
       id TEXT PRIMARY KEY,
+      bond_id TEXT NOT NULL DEFAULT '',
       character_id TEXT NOT NULL DEFAULT '',
       name TEXT NOT NULL DEFAULT '',
       relation TEXT NOT NULL DEFAULT '',
@@ -422,6 +423,8 @@ SCHEMA: list[str] = [
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_likes_unique "
     "ON post_likes(post_id, author_kind, author_id)",
     "CREATE INDEX IF NOT EXISTS idx_npcs_char ON circle_npcs(character_id)",
+    "CREATE INDEX IF NOT EXISTS idx_npcs_bond ON circle_npcs(bond_id)",
+    "CREATE INDEX IF NOT EXISTS idx_posts_bond ON posts(bond_id, at)",
     "CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, id)",
     "CREATE INDEX IF NOT EXISTS idx_entries_book ON world_book_entries(book_id, ord)",
     "CREATE INDEX IF NOT EXISTS idx_chats_char ON chats(character_id)",
@@ -506,6 +509,34 @@ def _migrate(conn, current: int) -> None:
                     "VALUES (?, ?, ?, ?, '', '', ?, ?)",
                     (new_id("bond"), pid, cid, started, now, now),
                 )
+    if current < 10:
+        # v10：朋友圈的隔离单位从「角色」改成「这段关系」。
+        # 温羽蓉面对杭杭、和面对岑，是两个世界：记忆、NPC、动态都该分开。
+        npc_cols = _columns(conn, "circle_npcs")
+        if "bond_id" not in npc_cols:
+            conn.execute("ALTER TABLE circle_npcs ADD COLUMN bond_id TEXT NOT NULL DEFAULT ''")
+        # 老 NPC 按角色的第一条关系回填（当时没有 persona 维度，只能这么估）
+        for npc in conn.execute(
+            "SELECT id, character_id FROM circle_npcs WHERE bond_id = ''"
+        ).fetchall():
+            bond = conn.execute(
+                "SELECT id FROM bonds WHERE character_id = ? ORDER BY created_at ASC LIMIT 1",
+                (npc["character_id"],),
+            ).fetchone()
+            if bond:
+                conn.execute(
+                    "UPDATE circle_npcs SET bond_id = ? WHERE id = ?", (bond["id"], npc["id"])
+                )
+        # 我的帖子当年没记 bond，按角色补上
+        for post in conn.execute(
+            "SELECT id, character_id FROM posts WHERE bond_id = '' AND character_id != ''"
+        ).fetchall():
+            bond = conn.execute(
+                "SELECT id FROM bonds WHERE character_id = ? ORDER BY created_at ASC LIMIT 1",
+                (post["character_id"],),
+            ).fetchone()
+            if bond:
+                conn.execute("UPDATE posts SET bond_id = ? WHERE id = ?", (bond["id"], post["id"]))
     if current < 8:
         # v8：朋友圈配图。库里只留路径数组，图片本体在 data/uploads/ 下，
         # 这样每 5 分钟整体复制的同步层不会因为图片变重。
@@ -1906,8 +1937,13 @@ def reply_json(row) -> dict[str, Any]:
 
 
 def npc_json(row) -> dict[str, Any]:
+    try:
+        bond_id = row["bond_id"]
+    except (KeyError, IndexError):
+        bond_id = ""
     return {
         "id": row["id"],
+        "bondId": bond_id,
         "characterId": row["character_id"],
         "name": row["name"],
         "relation": row["relation"],
@@ -1977,10 +2013,13 @@ def set_post_images(conn, post_id: str, images: list[dict[str, Any]]) -> None:
     )
 
 
-def list_posts(conn, character_id: str, limit: int = 50) -> list[dict[str, Any]]:
+def list_posts(conn, bond_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    """一段关系一个朋友圈。查的是 bond，不是角色——同一个人设换了，看到的就是另一份。"""
+    if not bond_id:
+        return []
     rows = conn.execute(
-        "SELECT * FROM posts WHERE character_id = ? ORDER BY at DESC, created_at DESC LIMIT ?",
-        (character_id, int(limit)),
+        "SELECT * FROM posts WHERE bond_id = ? ORDER BY at DESC, created_at DESC LIMIT ?",
+        (bond_id, int(limit)),
     ).fetchall()
     if not rows:
         return []
@@ -2099,27 +2138,35 @@ def save_home_note(conn, chat_id: str, day: str, text: str) -> dict[str, Any]:
     return {"chatId": chat_id, "day": day, "text": text}
 
 
-def list_npcs(conn, character_id: str) -> list[dict[str, Any]]:
+def list_npcs(conn, bond_id: str) -> list[dict[str, Any]]:
+    if not bond_id:
+        return []
     rows = conn.execute(
-        "SELECT * FROM circle_npcs WHERE character_id = ? ORDER BY created_at ASC",
-        (character_id,),
+        "SELECT * FROM circle_npcs WHERE bond_id = ? ORDER BY created_at ASC",
+        (bond_id,),
     ).fetchall()
     return [npc_json(r) for r in rows]
 
 
 def upsert_npc(
-    conn, character_id: str, name: str, relation: str = "", note: str = "", seen_at: str = ""
+    conn,
+    bond_id: str,
+    character_id: str,
+    name: str,
+    relation: str = "",
+    note: str = "",
+    seen_at: str = "",
 ) -> dict[str, Any] | None:
-    """按名字去重：同一个角色世界里，同名 NPC 只留一条。
+    """按名字去重：同一段关系里，同名 NPC 只留一条。
 
     抽错的 NPC（把地点当成人）由用户手动删，不在这里猜。
     """
     name = (name or "").strip()
-    if not name:
+    if not name or not bond_id:
         return None
     row = conn.execute(
-        "SELECT * FROM circle_npcs WHERE character_id = ? AND name = ?",
-        (character_id, name),
+        "SELECT * FROM circle_npcs WHERE bond_id = ? AND name = ?",
+        (bond_id, name),
     ).fetchone()
     now = now_iso()
     if row:
@@ -2131,9 +2178,10 @@ def upsert_npc(
         return npc_json(row)
     nid = new_id("npc")
     conn.execute(
-        "INSERT INTO circle_npcs (id, character_id, name, relation, note, last_seen_at, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (nid, character_id, name, relation, note, seen_at or now, now),
+        "INSERT INTO circle_npcs "
+        "(id, bond_id, character_id, name, relation, note, last_seen_at, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (nid, bond_id, character_id, name, relation, note, seen_at or now, now),
     )
     row = conn.execute("SELECT * FROM circle_npcs WHERE id = ?", (nid,)).fetchone()
     return npc_json(row)

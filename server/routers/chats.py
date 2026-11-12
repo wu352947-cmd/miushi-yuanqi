@@ -109,7 +109,11 @@ def _load_context(
             "digest": db.get_digest(conn, ((chat or {}).get("id") or "")),
             "context_budget": int((config.get("settings") or {}).get("contextBudget") or 0),
             # 只要「她和我」发的最近几条：NPC 的动态不进她的上下文
-            "posts": moments.recent_for_prompt(conn, character.get("id") or ""),
+            "posts": moments.recent_for_prompt(
+                conn,
+                character.get("id") or "",
+                (persona or {}).get("id") or "",
+            ),
         }
     )
     return {

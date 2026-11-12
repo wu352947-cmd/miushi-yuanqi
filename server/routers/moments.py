@@ -60,24 +60,31 @@ def _persona_for(conn, character_id: str):
 
 
 @router.get("")
-def list_feed(character_id: str = "", limit: int = 50, conn=Depends(get_conn)) -> dict:
-    """一整个朋友圈：动态 + 这个世界里的 NPC。"""
-    if not character_id:
+def list_feed(bond_id: str = "", limit: int = 50, conn=Depends(get_conn)) -> dict:
+    """一整个朋友圈：动态 + 这个世界里的人。
+
+    按 bond（角色 × 用户设定）取，不是按角色——换了人设就是另一个世界。
+    """
+    if not bond_id:
         return {"ok": True, "posts": [], "npcs": []}
     return {
         "ok": True,
-        "posts": db.list_posts(conn, character_id, limit=max(1, min(200, limit))),
-        "npcs": db.list_npcs(conn, character_id),
+        "posts": db.list_posts(conn, bond_id, limit=max(1, min(200, limit))),
+        "npcs": db.list_npcs(conn, bond_id),
     }
 
 
 @router.post("")
 async def create_post(payload: PostIn, conn=Depends(get_conn)) -> dict:
     """我发一条。作者固定是人设（persona）。"""
-    character_id = (payload.characterId or "").strip()
+    bond_id = (payload.bondId or "").strip()
     text = (payload.text or "").strip()
-    if not character_id:
+    if not bond_id:
         raise ApiError("badrequest", "先选一个角色。")
+    bond = conn.execute("SELECT * FROM bonds WHERE id = ?", (bond_id,)).fetchone()
+    if not bond:
+        raise ApiError("notfound", "这段关系还没建立起来。", status=404)
+    character_id = bond["character_id"]
     if not text:
         raise ApiError("badrequest", "写点什么再发。")
     if len(text) > 1000:
@@ -85,17 +92,19 @@ async def create_post(payload: PostIn, conn=Depends(get_conn)) -> dict:
     persona = _persona_for(conn, character_id)
     name = (persona or {}).get("name") or "我"
     pid_ = (persona or {}).get("id") or ""
-    post = db.create_post(conn, character_id, "persona", pid_, name, text, source="manual")
+    post = db.create_post(
+        conn, character_id, "persona", pid_, name, text, source="manual", bond_id=bond_id
+    )
     # 她看到你发了，后台接一句；发表本身不等她
     _kick(moments.character_react(post["id"]))
     return {"ok": True, "post": post}
 
 
 @router.get("/npcs")
-def list_npcs(character_id: str = "", conn=Depends(get_conn)) -> dict:
-    if not character_id:
+def list_npcs(bond_id: str = "", conn=Depends(get_conn)) -> dict:
+    if not bond_id:
         return {"ok": True, "npcs": []}
-    return {"ok": True, "npcs": db.list_npcs(conn, character_id)}
+    return {"ok": True, "npcs": db.list_npcs(conn, bond_id)}
 
 
 @router.delete("/npcs/{npc_id}")

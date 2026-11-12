@@ -12429,6 +12429,16 @@ const DATA = {
     var r = resolvedPersona(chat, char);
     return { characterId: char ? char.id : '', personaId: (r.persona && r.persona.id) || '' };
   }
+  /* 朋友圈（还有 NPC、每日配额）都挂在这段关系上。
+     同一个人设换角色、同一个角色换人设，都是不同的世界。 */
+  function currentBondId() {
+    var b = currentBond();
+    var hit = (state.bonds || []).filter(function (x) {
+      return x.characterId === b.characterId && (x.personaId || '') === b.personaId;
+    })[0];
+    return hit ? hit.id : '';
+  }
+
   function memoryScope() {
     if (memoryScopeOverride) return memoryScopeOverride;
     var b = currentBond();
@@ -13853,13 +13863,19 @@ const DATA = {
   function loadCircle() {
     var char = circleChar();
     if (!char) return Promise.resolve();
-    var cid = char.id;
-    return serverFetch('/moments?character_id=' + encodeURIComponent(cid))
+    var bondId = currentBondId();
+    if (!bondId) {
+      circleCache = { bondId: '', characterId: char.id, posts: [], npcs: [], loaded: true };
+      renderCircleFeed();
+      return Promise.resolve();
+    }
+    return serverFetch('/moments?bond_id=' + encodeURIComponent(bondId))
       .then(function (res) {
         // 切角色太快时旧请求会晚到，丢掉
-        if (circleChar() && circleChar().id === cid) {
+        if (currentBondId() === bondId) {
           circleCache = {
-            characterId: cid,
+            bondId: bondId,
+            characterId: char.id,
             posts: (res && res.posts) || [],
             npcs: (res && res.npcs) || [],
             loaded: true
@@ -14087,8 +14103,10 @@ const DATA = {
     var text = (input && input.value || '').trim();
     if (!char) { toast('先选一个角色。'); return; }
     if (!text) { toast('配一句话吧，纯图先不支持。'); return; }
+    var bondId = currentBondId();
+    if (!bondId) { toast('这段关系还没建立起来。'); return; }
     var blobs = circlePending.slice();
-    serverFetch('/moments', { method: 'POST', body: { characterId: char.id, text: text } })
+    serverFetch('/moments', { method: 'POST', body: { bondId: bondId, text: text } })
       .then(function (res) {
         var post = res && res.post;
         if (!blobs.length || !post || !post.id) return null;

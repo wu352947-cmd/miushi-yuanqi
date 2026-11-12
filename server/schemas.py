@@ -190,7 +190,8 @@ class ChatDigestPatch(BaseModel):
 
 
 class PostIn(BaseModel):
-    characterId: str
+    # 朋友圈按「这段关系」隔离，不再按角色——同一角色换了人设是另一个世界
+    bondId: str
     text: str
 
 
