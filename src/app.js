@@ -1664,10 +1664,9 @@
     if (view === 'me') renderMe();
     if (view === 'listen') {
       renderListen();
-      loadMusicState().then(function (st) {
-        if (!st || !st.loggedIn) return;
-        var needs = !DATA.playlists[MY_SLOT];
-        if (needs) return loadMyPlaylist();
+      loadMusicState().then(function () {
+        // 歌单不需要登录也能拉；登录只影响音质和会员歌
+        if (!myPlaylistReady) return loadMyPlaylist();
       }).then(function () { renderListen(); });
     }
     if (view === 'circle') renderCircle();
@@ -2391,11 +2390,16 @@
     timer: null
   };
   if (!DATA.playlists[listen.playlist]) listen.playlist = 0;
-  if (!DATA.playlists[listen.playlist].songs[listen.song]) listen.song = 0;
+  var PENDING_PLAYLIST = {
+    name: '正在载入',
+    desc: '',
+    songs: [{ title: '—', artist: '', dur: 1 }]
+  };
 
   function currentPlaylist() {
-    return DATA.playlists[listen.playlist] || DATA.playlists[0];
+    return DATA.playlists[listen.playlist] || DATA.playlists[0] || PENDING_PLAYLIST;
   }
+  if (!currentPlaylist().songs[listen.song]) listen.song = 0;
   function currentSong() {
     var pl = currentPlaylist();
     return pl.songs[listen.song] || pl.songs[0] || { title: '', artist: '', dur: 1 };
@@ -2407,9 +2411,10 @@
   var MY_PLAYLIST_ID = '13979037654';
   var MY_SLOT = 3;
   var myPlaylistLoading = false;
+  var myPlaylistReady = false;
 
   function loadMyPlaylist() {
-    if (DATA.playlists[MY_SLOT] || myPlaylistLoading) return Promise.resolve();
+    if (myPlaylistReady || myPlaylistLoading) return Promise.resolve();
     myPlaylistLoading = true;
     return serverFetch('/music/playlist/' + MY_PLAYLIST_ID).then(function (res) {
       var songs = (res.songs || []).filter(function (x) { return x && x.id; }).map(function (x) {
@@ -2424,19 +2429,21 @@
         };
       });
       if (!songs.length) return;
-      DATA.playlists[MY_SLOT] = {
+      // 只留这一个：把本地那几个占位歌单整个换掉
+      DATA.playlists = [{
         name: '休恋逝水，兰芝华玥',
         desc: '我的网易云歌单',
         songs: songs
-      };
+      }];
+      myPlaylistReady = true;
       // 加载好就直接用它 —— 这个歌单就是你要的那个
-      if (listen.playlist !== MY_SLOT) {
-        listen.playlist = MY_SLOT;
-        listen.song = 0;
+      {
+        listen.playlist = 0;
+        if (!listen.song || listen.song >= songs.length) listen.song = 0;
         listen.progress = 0;
         playingSongId = "";
         if (audioEl) { audioEl.pause(); audioEl.removeAttribute("src"); }
-        state.listen = { playlist: MY_SLOT, song: 0 };
+        state.listen = { playlist: 0, song: listen.song };
         save();
       }
       renderListen();
