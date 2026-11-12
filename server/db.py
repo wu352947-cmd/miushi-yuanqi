@@ -1252,17 +1252,13 @@ def sync_state(conn, state: dict[str, Any]) -> None:
         config["backupAt"] = state.get("backupAt") or ""
     new_settings = state.get("settings")
     if isinstance(new_settings, dict):
-        for key in (
-            "notify",
-            "splashAlways",
-            "startDate",
-            "globalBookId",
-            "defaultPresetId",
-            "memoryExtractEnabled",
-            "memoryExtractEvery",
-        ):
-            if key in new_settings:
-                config["settings"][key] = new_settings[key]
+        # 合并全部传入项，不做白名单：settings 是自由字典，缺的键由
+        # DEFAULT_SETTINGS 兜底。之前是列举 key，加一个设置就得记得来这里
+        # 补一行——上下文压缩那四项就这么漏掉了，配了永远存不进后端。
+        for key, value in new_settings.items():
+            if value is None:
+                continue
+            config["settings"][key] = value
     if state.get("modelId") is not None:
         config["modelId"] = state.get("modelId") or ""
     if state.get("currentCharacterId") is not None:

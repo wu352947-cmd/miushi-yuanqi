@@ -30,3 +30,30 @@ def test_sync_collections_and_settings(client):
     client.put("/api/state", json={"state": state})
     final = client.get("/api/bootstrap").json()["state"]
     assert all(c["id"] != "char-new" for c in final["characters"])
+
+
+def test_compression_settings_roundtrip(client):
+    """压缩设置必须能存进后端。
+
+    之前 sync_state 用白名单列举 settings 的 key，压缩那四项
+    （contextAuto / contextThreshold / compressModelId / contextBudget）
+    不在名单里，导致界面上配了也永远存不进去、后端一直用默认值。
+    """
+    payload = {
+        "state": {
+            "settings": {
+                "contextBudget": 8000,
+                "contextThreshold": 90,
+                "contextAuto": False,
+                "compressModelId": "model-test-123",
+            }
+        }
+    }
+    r = client.put("/api/state", json=payload)
+    assert r.status_code == 200, r.text
+
+    st = client.get("/api/bootstrap").json()["state"]["settings"]
+    assert st["contextBudget"] == 8000
+    assert st["contextThreshold"] == 90
+    assert st["contextAuto"] is False
+    assert st["compressModelId"] == "model-test-123"
