@@ -41,6 +41,21 @@ def _call(path: str, params: dict[str, Any] | None = None, cookie: str = "", tim
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode() or "{}")
+    except urllib.error.HTTPError as exc:
+        # ncm-api 用 4xx 表达业务错误（验证码错、参数错、权限不足），
+        # body 里才是真正的原因。读出来交给上层判断，不要当成"连不上"。
+        try:
+            raw = exc.read().decode() or "{}"
+        except Exception:  # noqa: BLE001
+            raw = "{}"
+        LOG.info("网易云返回 %s（%s）：%s", exc.code, path, raw[:160])
+        try:
+            data = json.loads(raw)
+        except Exception:  # noqa: BLE001
+            raise ApiError("badgateway", "音乐服务返回了看不懂的内容。", status=502) from exc
+        if isinstance(data, dict):
+            return data
+        raise ApiError("badgateway", "音乐服务返回了看不懂的内容。", status=502) from exc
     except urllib.error.URLError as exc:
         LOG.warning("网易云接口不通（%s）：%s", path, exc)
         raise ApiError("badgateway", "音乐服务暂时连不上。", status=502) from exc
@@ -99,9 +114,15 @@ def login(conn, phone: str, captcha: str) -> dict:
     body = _body(data)
     code = body.get("code")
     if code != 200:
-        msg = {502: "验证码不对，或者过期了。", 503: "请求太频繁，等一会儿。", 400: "网易云拒了这个请求。"}.get(
-            code, "没登录上（%s）。" % code
-        )
+        # 网易云自己会带 msg（比如"验证码错误"），有就直接用
+        detail = str(body.get("msg") or body.get("message") or "").strip()
+        if detail and len(detail) <= 40:
+            raise ApiError("badrequest", detail)
+        msg = {
+            502: "验证码不对，或者过期了。重新获取一条试试。",
+            503: "请求太频繁了，等一会儿再试。",
+            400: "网易云拒了这个请求，稍后再试。",
+        }.get(code, "没登录上（%s）。" % code)
         raise ApiError("badrequest", msg)
     cookie = body.get("cookie") or ""
     if not cookie:
