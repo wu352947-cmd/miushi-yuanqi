@@ -552,6 +552,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         # 她要不要在你进聊天页时自己开口。默认关：
         # 她只认上下文、没有时间感，隔久了会在原地接着说，看着奇怪。
         "proactiveEnabled": False,
+        # 首页那几块：城市（留空=不显示天气）/ 生日 MM-DD（留空=不显示倒计时）
+        # / 她每天留一句话。默认值要和前端 baseState 保持一致。
+        "homeCity": "福州",
+        "birthday": "",
+        "homeNoteEnabled": True,
     },
 }
 
