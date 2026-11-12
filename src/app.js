@@ -13,7 +13,7 @@
   var rawLocalSnapshot = null; /* 迁移用：file:// 或旧浏览器里的原始存档 */
   var SESSION_KEY = 'msyq.entered';
   var THEME_ORDER = ['pink', 'ice'];
-  var NO_TAB_VIEWS = ['wx', 'chat', 'characters', 'personas', 'books', 'providers', 'presets', 'stats'];
+  var NO_TAB_VIEWS = ['wx', 'chat', 'profile', 'characters', 'personas', 'books', 'providers', 'presets', 'stats'];
 
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
@@ -2450,7 +2450,12 @@
       : '';
     var open = circleReplyFor === post.id;
     return '<article class="wx-post">' +
-      '<div class="wx-post__avatar">' + esc(circleInitial(post.authorName)) + '</div>' +
+      '<button class="wx-post__avatar" type="button" data-a2="circle-author"' +
+        ' data-kind="' + esc(post.authorKind || '') + '"' +
+        ' data-id="' + esc(post.authorId || '') + '"' +
+        ' data-name="' + esc(post.authorName || '') + '"' +
+        ' aria-label="看' + esc(post.authorName || '') + '的主页">' +
+        esc(circleInitial(post.authorName)) + '</button>' +
       '<div class="wx-post__body">' +
         '<p class="wx-post__name">' + esc(post.authorName) + '</p>' +
         '<p class="wx-post__text">' + esc(post.text) + '</p>' +
@@ -2659,6 +2664,77 @@
         return loadCircle();
       })
       .catch(function (err) { toast(err.message || '没发出去。'); });
+  }
+
+  /* ---------- 个人主页 ---------- */
+  /* 点谁的头像看谁：她的、我自己的、NPC 的，都是同一套筛选，只是作者不同。 */
+  var profileTarget = null;
+  var profileBack = 'circle';
+
+  function openProfile(kind, id, name) {
+    profileTarget = { kind: kind || 'character', id: id || '', name: name || '' };
+    if (currentView !== 'profile') profileBack = currentView || 'circle';
+    renderProfile();
+    navTo('profile');
+  }
+
+  function renderProfile() {
+    var t = profileTarget;
+    if (!t) return;
+
+    var person = null;
+    if (t.kind === 'character') {
+      person = (state.characters || []).filter(function (x) { return x.id === t.id; })[0] || null;
+    } else if (t.kind === 'persona') {
+      person = (state.userPersonas || []).filter(function (x) { return x.id === t.id; })[0] || null;
+    } else {
+      person = (circleCache.npcs || []).filter(function (x) {
+        return x.id === t.id || x.name === t.name;
+      })[0] || null;
+    }
+
+    var displayName = (person && person.name) || t.name || '她';
+
+    var title = document.getElementById('profileTitle');
+    if (title) title.textContent = displayName;
+
+    var face = document.getElementById('pfFace');
+    if (face) {
+      if (person && person.avatar) face.innerHTML = '<img src="' + esc(person.avatar) + '" alt="">';
+      else face.textContent = displayName.slice(0, 1);
+    }
+
+    var nameEl = document.getElementById('pfName');
+    if (nameEl) nameEl.textContent = displayName;
+
+    var signEl = document.getElementById('pfSign');
+    if (signEl) {
+      var sign = '';
+      if (t.kind === 'npc') sign = String((person && person.relation) || '');
+      else sign = String((person && (person.desc || person.description)) || '');
+      signEl.textContent = sign ? sign.slice(0, 70) : '这个人还没写签名。';
+    }
+
+    var cover = document.getElementById('pfCover');
+    if (cover) {
+      try {
+        cover.style.backgroundImage = 'url(' + WALLPAPERS[currentWp('home')] + ')';
+      } catch (e) { /* 壁纸取不到就用底色 */ }
+    }
+
+    var all = circleCache.posts || [];
+    var mine = all.filter(function (p) {
+      if ((p.authorKind || '') !== t.kind) return false;
+      if (t.kind === 'npc') return (p.authorName || '') === t.name;
+      return !t.id || p.authorId === t.id || (p.authorName || '') === displayName;
+    });
+
+    var box = document.getElementById('profilePosts');
+    if (box) {
+      box.innerHTML = mine.length
+        ? mine.map(circlePostHtml).join('')
+        : '<p class="pf-empty">还没有发过什么。</p>';
+    }
   }
 
   function circleReply(postId) {
@@ -5582,6 +5658,16 @@
     if (action === 'circle-drop') { circleDropPost(el.getAttribute('data-id')); return true; }
     if (action === 'circle-npc-drop') { circleDropNpc(el.getAttribute('data-id')); return true; }
     if (action === 'circle-generate') { generateCirclePost(); return true; }
+    if (action === 'circle-author') {
+      openProfile(el.getAttribute('data-kind'), el.getAttribute('data-id'), el.getAttribute('data-name'));
+      return true;
+    }
+    if (action === 'profile-back') { navTo(profileBack || 'circle'); return true; }
+    if (action === 'chat-author') {
+      var me = currentChar();
+      if (me) openProfile('character', me.id, me.name);
+      return true;
+    }
     if (action === 'circle-pick') {
       var fileInput = document.getElementById('circleFiles');
       if (fileInput) fileInput.click();

@@ -2666,6 +2666,91 @@ html[data-theme="ice"] .tabbar { background: linear-gradient(180deg, rgba(252, 2
    灵动岛就因为这个一直挂着「0% 上下文快满了」，看着像卡住了。 */
 [hidden] { display: none !important; }
 
+/* ---------- 个人主页（点谁的头像看谁） ---------- */
+.view--profile { display: flex; flex-direction: column; background: #fff; }
+
+.pf-cover {
+  position: relative;
+  height: 190px;
+  background: #e9e4e8 center/cover no-repeat;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 0 18px 0 0;
+}
+.pf-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, .04) 0%, rgba(0, 0, 0, .16) 100%);
+  pointer-events: none;
+}
+.pf-face {
+  position: relative;
+  z-index: 1;
+  width: 68px;
+  height: 68px;
+  margin-bottom: -34px;
+  border-radius: 8px;
+  border: 3px solid #fff;
+  background: var(--pink-deep);
+  color: #fff;
+  font-family: var(--serif);
+  font-size: 26px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.pf-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.pf-head {
+  padding: 42px 18px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, .05);
+}
+.pf-name {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 600;
+  color: #111;
+}
+.pf-sign {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #9a9a9a;
+}
+
+.pf-posts { padding: 0 16px 24px; }
+.pf-posts .wx-post { padding: 16px 0; }
+.pf-posts .wx-post + .wx-post { border-top: 1px solid rgba(0, 0, 0, .045); }
+.pf-empty {
+  padding: 48px 20px;
+  text-align: center;
+  font-size: 13.5px;
+  color: #a8a8a8;
+  line-height: 1.9;
+}
+
+/* 朋友圈里的头像改成可点的按钮 */
+button.wx-post__avatar {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* 聊天页顶部：头像和名字拆成两个按钮 */
+.chatbar__ava {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
 /* ---------- 聊天主界面（微信式） ---------- */
 /* 微信那套的结构：列表白底、灰分隔线、次要信息灰字、
    底栏四格等分。颜色沿用主题色，不硬套微信绿。 */
@@ -5745,8 +5830,10 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
             <button class="round-btn" type="button" data-nav="wx" aria-label="返回聊天列表">
               <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M12.4 4.6 7 10l5.4 5.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
+            <button class="chatbar__ava" type="button" data-action="chat-author" aria-label="看她的主页">
+              <span class="avatar avatar--ai av-sm" id="chatAvatar" data-av="char">缪</span>
+            </button>
             <button class="chatbar__id" type="button" data-open="characterSwitch" aria-haspopup="dialog" aria-label="切换正在说话的角色">
-              <span class="avatar avatar--ai av-sm" id="chatAvatar" data-av="char" aria-hidden="true">缪</span>
               <span class="chatbar__idtext">
                 <span class="chatbar__name serif"><span id="chatName" data-nm="char">缪诗</span><svg class="chev" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M8 5.6 12.4 10 8 14.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span class="chatbar__sub"><i class="live-dot" aria-hidden="true"></i>在线</span>
@@ -5808,6 +5895,27 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
                 <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3.4 10 16.4 4.6 13 16.2l-3.4-4.2-6.2-2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="m9.6 12 6.8-7.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
               </button>
             </div>
+          </div>
+        </section>
+
+        <!-- ②.5 个人主页（点谁的头像看谁） -->
+        <section class="view view--profile" data-view="profile" aria-label="主页">
+          <header class="wx-nav">
+            <button class="wx-nav__back" type="button" data-action="profile-back" aria-label="返回">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M12.4 4.6 7 10l5.4 5.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <span class="wx-nav__title" id="profileTitle">主页</span>
+            <span class="wx-nav__spacer" aria-hidden="true"></span>
+          </header>
+          <div class="page-scroll page-scroll--profile">
+            <div class="pf-cover" id="pfCover">
+              <span class="pf-face" id="pfFace">温</span>
+            </div>
+            <div class="pf-head">
+              <p class="pf-name" id="pfName">温羽蓉</p>
+              <p class="pf-sign" id="pfSign"></p>
+            </div>
+            <div class="pf-posts" id="profilePosts"></div>
           </div>
         </section>
 
@@ -6338,6 +6446,7 @@ const DATA = {
     { key: "memory", name: "记忆" },
     { key: "listen", name: "一起听" },
     { key: "circle", name: "朋友圈" },
+    { key: "profile", name: "主页" },
     { key: "me", name: "我的" },
     { key: "settings", name: "设置" },
     { key: "characters", name: "角色库" },
@@ -11474,7 +11583,7 @@ const DATA = {
   var rawLocalSnapshot = null; /* 迁移用：file:// 或旧浏览器里的原始存档 */
   var SESSION_KEY = 'msyq.entered';
   var THEME_ORDER = ['pink', 'ice'];
-  var NO_TAB_VIEWS = ['wx', 'chat', 'characters', 'personas', 'books', 'providers', 'presets', 'stats'];
+  var NO_TAB_VIEWS = ['wx', 'chat', 'profile', 'characters', 'personas', 'books', 'providers', 'presets', 'stats'];
 
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
   var $$ = function (sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
@@ -13911,7 +14020,12 @@ const DATA = {
       : '';
     var open = circleReplyFor === post.id;
     return '<article class="wx-post">' +
-      '<div class="wx-post__avatar">' + esc(circleInitial(post.authorName)) + '</div>' +
+      '<button class="wx-post__avatar" type="button" data-a2="circle-author"' +
+        ' data-kind="' + esc(post.authorKind || '') + '"' +
+        ' data-id="' + esc(post.authorId || '') + '"' +
+        ' data-name="' + esc(post.authorName || '') + '"' +
+        ' aria-label="看' + esc(post.authorName || '') + '的主页">' +
+        esc(circleInitial(post.authorName)) + '</button>' +
       '<div class="wx-post__body">' +
         '<p class="wx-post__name">' + esc(post.authorName) + '</p>' +
         '<p class="wx-post__text">' + esc(post.text) + '</p>' +
@@ -14120,6 +14234,77 @@ const DATA = {
         return loadCircle();
       })
       .catch(function (err) { toast(err.message || '没发出去。'); });
+  }
+
+  /* ---------- 个人主页 ---------- */
+  /* 点谁的头像看谁：她的、我自己的、NPC 的，都是同一套筛选，只是作者不同。 */
+  var profileTarget = null;
+  var profileBack = 'circle';
+
+  function openProfile(kind, id, name) {
+    profileTarget = { kind: kind || 'character', id: id || '', name: name || '' };
+    if (currentView !== 'profile') profileBack = currentView || 'circle';
+    renderProfile();
+    navTo('profile');
+  }
+
+  function renderProfile() {
+    var t = profileTarget;
+    if (!t) return;
+
+    var person = null;
+    if (t.kind === 'character') {
+      person = (state.characters || []).filter(function (x) { return x.id === t.id; })[0] || null;
+    } else if (t.kind === 'persona') {
+      person = (state.userPersonas || []).filter(function (x) { return x.id === t.id; })[0] || null;
+    } else {
+      person = (circleCache.npcs || []).filter(function (x) {
+        return x.id === t.id || x.name === t.name;
+      })[0] || null;
+    }
+
+    var displayName = (person && person.name) || t.name || '她';
+
+    var title = document.getElementById('profileTitle');
+    if (title) title.textContent = displayName;
+
+    var face = document.getElementById('pfFace');
+    if (face) {
+      if (person && person.avatar) face.innerHTML = '<img src="' + esc(person.avatar) + '" alt="">';
+      else face.textContent = displayName.slice(0, 1);
+    }
+
+    var nameEl = document.getElementById('pfName');
+    if (nameEl) nameEl.textContent = displayName;
+
+    var signEl = document.getElementById('pfSign');
+    if (signEl) {
+      var sign = '';
+      if (t.kind === 'npc') sign = String((person && person.relation) || '');
+      else sign = String((person && (person.desc || person.description)) || '');
+      signEl.textContent = sign ? sign.slice(0, 70) : '这个人还没写签名。';
+    }
+
+    var cover = document.getElementById('pfCover');
+    if (cover) {
+      try {
+        cover.style.backgroundImage = 'url(' + WALLPAPERS[currentWp('home')] + ')';
+      } catch (e) { /* 壁纸取不到就用底色 */ }
+    }
+
+    var all = circleCache.posts || [];
+    var mine = all.filter(function (p) {
+      if ((p.authorKind || '') !== t.kind) return false;
+      if (t.kind === 'npc') return (p.authorName || '') === t.name;
+      return !t.id || p.authorId === t.id || (p.authorName || '') === displayName;
+    });
+
+    var box = document.getElementById('profilePosts');
+    if (box) {
+      box.innerHTML = mine.length
+        ? mine.map(circlePostHtml).join('')
+        : '<p class="pf-empty">还没有发过什么。</p>';
+    }
   }
 
   function circleReply(postId) {
@@ -17043,6 +17228,16 @@ const DATA = {
     if (action === 'circle-drop') { circleDropPost(el.getAttribute('data-id')); return true; }
     if (action === 'circle-npc-drop') { circleDropNpc(el.getAttribute('data-id')); return true; }
     if (action === 'circle-generate') { generateCirclePost(); return true; }
+    if (action === 'circle-author') {
+      openProfile(el.getAttribute('data-kind'), el.getAttribute('data-id'), el.getAttribute('data-name'));
+      return true;
+    }
+    if (action === 'profile-back') { navTo(profileBack || 'circle'); return true; }
+    if (action === 'chat-author') {
+      var me = currentChar();
+      if (me) openProfile('character', me.id, me.name);
+      return true;
+    }
     if (action === 'circle-pick') {
       var fileInput = document.getElementById('circleFiles');
       if (fileInput) fileInput.click();

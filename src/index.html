@@ -250,8 +250,10 @@
             <button class="round-btn" type="button" data-nav="wx" aria-label="返回聊天列表">
               <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M12.4 4.6 7 10l5.4 5.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
+            <button class="chatbar__ava" type="button" data-action="chat-author" aria-label="看她的主页">
+              <span class="avatar avatar--ai av-sm" id="chatAvatar" data-av="char">缪</span>
+            </button>
             <button class="chatbar__id" type="button" data-open="characterSwitch" aria-haspopup="dialog" aria-label="切换正在说话的角色">
-              <span class="avatar avatar--ai av-sm" id="chatAvatar" data-av="char" aria-hidden="true">缪</span>
               <span class="chatbar__idtext">
                 <span class="chatbar__name serif"><span id="chatName" data-nm="char">缪诗</span><svg class="chev" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M8 5.6 12.4 10 8 14.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span class="chatbar__sub"><i class="live-dot" aria-hidden="true"></i>在线</span>
@@ -313,6 +315,27 @@
                 <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3.4 10 16.4 4.6 13 16.2l-3.4-4.2-6.2-2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="m9.6 12 6.8-7.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
               </button>
             </div>
+          </div>
+        </section>
+
+        <!-- ②.5 个人主页（点谁的头像看谁） -->
+        <section class="view view--profile" data-view="profile" aria-label="主页">
+          <header class="wx-nav">
+            <button class="wx-nav__back" type="button" data-action="profile-back" aria-label="返回">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M12.4 4.6 7 10l5.4 5.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <span class="wx-nav__title" id="profileTitle">主页</span>
+            <span class="wx-nav__spacer" aria-hidden="true"></span>
+          </header>
+          <div class="page-scroll page-scroll--profile">
+            <div class="pf-cover" id="pfCover">
+              <span class="pf-face" id="pfFace">温</span>
+            </div>
+            <div class="pf-head">
+              <p class="pf-name" id="pfName">温羽蓉</p>
+              <p class="pf-sign" id="pfSign"></p>
+            </div>
+            <div class="pf-posts" id="profilePosts"></div>
           </div>
         </section>
 

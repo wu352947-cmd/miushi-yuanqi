@@ -31,6 +31,7 @@ const DATA = {
     { key: "memory", name: "记忆" },
     { key: "listen", name: "一起听" },
     { key: "circle", name: "朋友圈" },
+    { key: "profile", name: "主页" },
     { key: "me", name: "我的" },
     { key: "settings", name: "设置" },
     { key: "characters", name: "角色库" },
