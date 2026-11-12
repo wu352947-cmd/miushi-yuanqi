@@ -14348,11 +14348,18 @@ const DATA = {
     if (currentView !== 'profile') profileBack = currentView || 'circle';
     renderProfile();
     navTo('profile');
-    /* 从聊天页点头像进来时，朋友圈可能还没加载过，先空着再补上。
+    /* 从聊天页点头像进来时，bonds 和朋友圈可能都还没加载过：
+       没有 bonds 就拿不到 bond_id，朋友圈查不了、备注也存不了。
        只对"当前角色"这么做——看别人的主页不该拉自己这段的数据。 */
     var c = currentChar();
-    if (!circleCache.loaded && kind === 'character' && c && c.id === id) {
-      loadCircle().then(function () {
+    if (kind === 'character' && c && c.id === id) {
+      var ready = (state.bonds && state.bonds.length)
+        ? Promise.resolve(true)
+        : refreshBondsQuiet();
+      ready.then(function () {
+        if (currentView === 'profile') renderProfile();   // 备注名可能刚拿到
+        return circleCache.loaded ? null : loadCircle();
+      }).then(function () {
         if (currentView === 'profile') renderProfile();
       }).catch(function () { /* 拉不到就空着，不打扰 */ });
     }
