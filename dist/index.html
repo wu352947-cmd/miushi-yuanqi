@@ -15624,8 +15624,21 @@ const DATA = {
     var t = (Math.log(v) - Math.log(BUDGET_MIN_K)) / (Math.log(BUDGET_MAX_K) - Math.log(BUDGET_MIN_K));
     return Math.round(t * 1000);
   }
+  /* 某个预算值在这台模型窗口下实际能生效多少 K。
+     必须按传进来的 k 算——用 contextBudget() 会读到还没保存的旧值，
+     拖到 1M 时会显示「实际 32.0K」，看起来像设置坏了。 */
+  function budgetCapK(k) {
+    var m = currentModel();
+    var win = (m && m.context) || 0;
+    var v = Number(k) || 32;
+    if (win > 0) {
+      var usable = Math.max(1024, win - 1200);
+      v = Math.min(v, Math.floor(usable * 0.9) / 1000);
+    }
+    return Math.round(v);
+  }
   function budgetSubText(k) {
-    var capK = Math.round(contextBudget() / 1000);
+    var capK = budgetCapK(k);
     var head = '历史最多带 ' + fmtTokens(k * 1000);
     // 设得比窗口还大时，实际生效会被窗口截断——直接说清楚，别让人以为设置没生效
     if (capK < k) {
