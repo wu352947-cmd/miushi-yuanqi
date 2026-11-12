@@ -465,7 +465,11 @@
         startDate: DATA.settings.startDate,
         chatFont: DATA.settings.chatFont || 'md',
         globalBookId: '',
-        defaultPresetId: 'preset-default'
+        defaultPresetId: 'preset-default',
+        /* 首页那几块的设置：城市 / 生日 / 每天一句便条 */
+        homeCity: '福州',
+        birthday: '',
+        homeNoteEnabled: true
       },
       nowText: DATA.nowText,
       memories: DATA.memories.map(function (m) {
@@ -522,6 +526,9 @@
         base.settings.chatFont = saved.settings.chatFont;
       }
       if (typeof saved.settings.globalBookId === 'string') base.settings.globalBookId = saved.settings.globalBookId;
+      if (typeof saved.settings.homeCity === 'string') base.settings.homeCity = saved.settings.homeCity;
+      if (typeof saved.settings.birthday === 'string') base.settings.birthday = saved.settings.birthday;
+      if (typeof saved.settings.homeNoteEnabled === 'boolean') base.settings.homeNoteEnabled = saved.settings.homeNoteEnabled;
     }
     if (typeof saved.nowText === 'string' && saved.nowText) base.nowText = saved.nowText;
     if (Array.isArray(saved.memories)) {
@@ -2544,6 +2551,114 @@
     }).join('');
   }
 
+  /* ---------------- 首页的真实数据 ---------------- */
+  /* 原则：后端给什么就显示什么，没给就整块藏起来。
+     以前这四块全是写死的（福州小雨 18°C、还有 12 天生日），看两次就穿帮。 */
+  var homeDynamic = { loaded: false, loading: false, data: null, cid: '', at: 0 };
+  var homeNoteWriting = false;
+
+  function noteClock(iso) {
+    if (!iso) return '';
+    var m = String(iso).match(/T(\d{2}):(\d{2})/);
+    return m ? (m[1] + ':' + m[2]) : '';
+  }
+
+  function applyHomeDynamic() {
+    var d = homeDynamic.data;
+    if (!d) return;
+
+    var wcity = $('#homeWeatherCity');
+    var wtemp = $('#homeTemp');
+    if (wcity && wtemp) {
+      var wcard = wcity.closest('.w--pill');
+      if (d.weather) {
+        wcity.textContent = d.weather.city + ' · ' + (d.weather.text || '');
+        wtemp.textContent = String(d.weather.temp);
+        if (wcard) wcard.hidden = false;
+      } else if (wcard) {
+        wcard.hidden = true;
+      }
+    }
+
+    var memTitle = $('#homeMemTitle');
+    var memText = $('#homeMemText');
+    if (memTitle && memText) {
+      var mcard = memTitle.closest('.w--mem');
+      if (d.memory) {
+        memTitle.textContent = d.memory.title || '还没记住什么';
+        memText.textContent = d.memory.text || '';
+        if (mcard) mcard.hidden = false;
+      } else if (mcard) {
+        mcard.hidden = true;
+      }
+    }
+
+    var noteText = $('#homeNoteText');
+    if (noteText) {
+      var ncard = noteText.closest('.w-note');
+      if (d.note && d.note.text) {
+        noteText.textContent = d.note.text;
+        var noteTime = $('#homeNoteTime');
+        if (noteTime) noteTime.textContent = noteClock(d.note.createdAt);
+        if (ncard) ncard.hidden = false;
+      } else if (state.settings.homeNoteEnabled === false && ncard) {
+        ncard.hidden = true;
+      }
+      /* 还没写出来就保持原样，别闪一下空白 */
+    }
+
+    var cd = $('#homeCountdown');
+    if (cd) {
+      var ccard = cd.closest('.w--capsule');
+      if (d.birthday) {
+        cd.textContent = String(d.birthday.days);
+        if (ccard) ccard.hidden = false;
+      } else if (ccard) {
+        ccard.hidden = true;
+      }
+    }
+  }
+
+  function writeHomeNote(chatId) {
+    if (homeNoteWriting || !chatId) return;
+    homeNoteWriting = true;
+    serverFetch('/home/note?chat_id=' + encodeURIComponent(chatId), { method: 'POST' })
+      .then(function (r) {
+        homeNoteWriting = false;
+        if (r && r.ok && r.note && homeDynamic.data && homeDynamic.data.note == null) {
+          homeDynamic.data.note = r.note;
+          applyHomeDynamic();
+        }
+      })
+      .catch(function () { homeNoteWriting = false; });
+  }
+
+  function fetchHome(force) {
+    if (!SERVER_MODE || !serverOnline) return;
+    var cid = state.currentCharacterId || '';
+    var now = Date.now();
+    if (!force && homeDynamic.loaded && homeDynamic.cid === cid && now - homeDynamic.at < 60000) return;
+    if (homeDynamic.loading) return;
+    homeDynamic.loading = true;
+    var chat = chatOf(cid);
+    var chatId = (chat && chat.id) || '';
+    var q = '?character_id=' + encodeURIComponent(cid) + '&chat_id=' + encodeURIComponent(chatId);
+    serverFetch('/home' + q)
+      .then(function (d) {
+        homeDynamic.loading = false;
+        if (!d || !d.ok) return;
+        homeDynamic.data = d;
+        homeDynamic.loaded = true;
+        homeDynamic.cid = cid;
+        homeDynamic.at = Date.now();
+        applyHomeDynamic();
+        if (!d.note && chatId && state.settings.homeNoteEnabled !== false) {
+          writeHomeNote(chatId);
+        }
+      })
+      .catch(function () { homeDynamic.loading = false; });
+  }
+
   function renderHome() {
     var now = new Date();
     paintAllAvatars();
@@ -2557,18 +2672,9 @@
     if (greet) greet.textContent = greetingText(now);
     var wd = $('#homeWeekday');
     if (wd) wd.textContent = homeWeekdayText(now);
-    var wcity = $('#homeWeatherCity');
-    if (wcity) wcity.textContent = DATA.home.weather.city + ' · ' + DATA.home.weather.text;
-    var wtemp = $('#homeTemp');
-    if (wtemp) wtemp.textContent = DATA.home.weather.temp;
-    var note = $('#homeNoteText');
-    if (note) note.textContent = DATA.home.note;
-    var noteTime = $('#homeNoteTime');
-    if (noteTime) noteTime.textContent = DATA.home.noteTime;
-    var memTitle = $('#homeMemTitle');
-    if (memTitle) memTitle.textContent = DATA.home.memoryTitle;
-    var memText = $('#homeMemText');
-    if (memText) memText.textContent = DATA.home.memoryText;
+    /* 天气 / 留言 / 今日记住 / 生日倒计时：数据在后端，这里不铺假值。
+       applyHomeDynamic() 负责该填的填、该藏的藏。 */
+    applyHomeDynamic();
     var idx = now.getFullYear() * 372 + now.getMonth() * 31 + now.getDate();
     var quote = $('#homeQuote');
     if (quote) quote.textContent = DATA.home.quotes[idx % DATA.home.quotes.length];
@@ -2592,9 +2698,8 @@
     if (photo) photo.src = WALLPAPERS[currentWp('listen')];
     var photoDate = document.getElementById('homePhotoDate');
     if (photoDate) photoDate.textContent = monthDay(now);
-    var countdown = document.getElementById('homeCountdown');
-    if (countdown) countdown.textContent = '12';
     tickHomeClock(now);
+    fetchHome();
   }
 
   /* ---------------- 我的 / 设置 ---------------- */
@@ -2679,6 +2784,12 @@
     var s = $('#splashSwitch');
     n.setAttribute('aria-checked', String(!!state.settings.notify));
     s.setAttribute('aria-checked', String(!!state.settings.splashAlways));
+    var cityEl = $('#homeCityInput');
+    if (cityEl) cityEl.value = state.settings.homeCity || '';
+    var bdEl = $('#birthdayInput');
+    if (bdEl) bdEl.value = state.settings.birthday || '';
+    var hnEl = $('#homeNoteSwitch');
+    if (hnEl) hnEl.setAttribute('aria-checked', String(state.settings.homeNoteEnabled !== false));
     var pv = $('#proactiveSwitch');
     if (pv) pv.setAttribute('aria-checked', String(state.settings.proactiveEnabled === true));
     $('#startDate').value = state.settings.startDate;
@@ -4386,6 +4497,39 @@
       toast(state.settings.proactiveEnabled
         ? '打开了：进聊天页时，如果她刚说完你还没回，她会自己再写一句。'
         : '关掉了：只在你说话之后她才回应。');
+    });
+    var cityInput = $('#homeCityInput');
+    if (cityInput) cityInput.addEventListener('change', function (e) {
+      state.settings.homeCity = String(e.target.value || '').trim();
+      save();
+      homeDynamic.loaded = false;
+      fetchHome(true);
+      toast(state.settings.homeCity
+        ? '首页天气改成「' + state.settings.homeCity + '」了。'
+        : '不填城市就不显示天气。');
+    });
+    var bdInput = $('#birthdayInput');
+    if (bdInput) bdInput.addEventListener('change', function (e) {
+      var v = String(e.target.value || '').trim();
+      if (v && !/^\d{1,2}-\d{1,2}$/.test(v)) {
+        e.target.value = state.settings.birthday || '';
+        toast('写成 05-13 这种格式。');
+        return;
+      }
+      state.settings.birthday = v;
+      save();
+      homeDynamic.loaded = false;
+      fetchHome(true);
+      toast(v ? '记住了。' : '不填就不显示倒计时。');
+    });
+    var hnSwitch = $('#homeNoteSwitch');
+    if (hnSwitch) hnSwitch.addEventListener('click', function () {
+      state.settings.homeNoteEnabled = state.settings.homeNoteEnabled === false;
+      save();
+      renderSettings();
+      homeDynamic.loaded = false;
+      fetchHome(true);
+      toast(state.settings.homeNoteEnabled ? '她每天会在首页留一句话。' : '首页不再留话了。');
     });
     $('#startDate').addEventListener('change', function (e) {
       var v = e.target.value;

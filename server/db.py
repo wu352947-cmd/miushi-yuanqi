@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - 兜底
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 # --------------------------------------------------------------------------- 路径
@@ -389,6 +389,17 @@ SCHEMA: list[str] = [
       note TEXT NOT NULL DEFAULT '',
       last_seen_at TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL
+    )
+    """,
+    # v7：首页「她留给你的那句话」按天缓存。
+    # 一天一条，生成过就不再改；同一天刷新首页不会反复花钱。
+    """
+    CREATE TABLE IF NOT EXISTS home_notes (
+      chat_id TEXT NOT NULL,
+      day TEXT NOT NULL,
+      text TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (chat_id, day)
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_usage_at ON usage(at)",
@@ -1959,6 +1970,31 @@ def add_reply(
 def delete_reply(conn, reply_id: str) -> bool:
     cur = conn.execute("DELETE FROM post_replies WHERE id = ?", (reply_id,))
     return cur.rowcount > 0
+
+
+def get_home_note(conn, chat_id: str, day: str) -> dict[str, Any] | None:
+    """取某天已经写好的那张便条。没有就返回 None——不编。"""
+    row = conn.execute(
+        "SELECT chat_id, day, text, created_at FROM home_notes WHERE chat_id = ? AND day = ?",
+        (chat_id, day),
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "chatId": row["chat_id"],
+        "day": row["day"],
+        "text": row["text"],
+        "createdAt": row["created_at"],
+    }
+
+
+def save_home_note(conn, chat_id: str, day: str, text: str) -> dict[str, Any]:
+    """记住今天这句。同一天重复调用直接覆盖（手动的「再写一张」用得上）。"""
+    conn.execute(
+        "INSERT OR REPLACE INTO home_notes (chat_id, day, text, created_at) VALUES (?, ?, ?, ?)",
+        (chat_id, day, text, now_iso()),
+    )
+    return {"chatId": chat_id, "day": day, "text": text}
 
 
 def list_npcs(conn, character_id: str) -> list[dict[str, Any]]:

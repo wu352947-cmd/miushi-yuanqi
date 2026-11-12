@@ -44,6 +44,7 @@ from server.routers import (  # noqa: E402
     auth as auth_routes,
     characters,
     chats,
+    home as home_routes,
     memories,
     moments as moments_routes,
     bonds,
@@ -113,6 +114,7 @@ for module in (
     memories,
     bonds,
     moments_routes,
+    home_routes,
     migrate,
 ):
     app.include_router(module.router, dependencies=PROTECTED)
