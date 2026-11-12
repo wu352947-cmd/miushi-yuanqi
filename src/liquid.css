@@ -693,7 +693,9 @@ u { text-decoration: none; border-bottom: 1px solid rgba(var(--tint-rgb), .7); p
   height: calc(66px + env(safe-area-inset-bottom));
   padding: 0 6px env(safe-area-inset-bottom);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* 按实际 tab 数自适应：写死 4 列时，加上朋友圈第五格就被挤到第二行 */
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   align-items: stretch;
   border-radius: 22px 22px 0 0;
   background: linear-gradient(180deg, rgba(255, 253, 254, .55) 0%, rgba(255, 253, 254, .3) 100%);
