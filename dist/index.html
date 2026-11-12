@@ -13346,7 +13346,14 @@ const DATA = {
     if (view === 'chat') { scrollChatBottom(false); scheduleProactive(); renderContextBar(); }
     if (view === 'memory') { renderMemories(); refreshMemoriesQuiet(); }
     if (view === 'me') renderMe();
-    if (view === 'listen') { renderListen(); loadMusicState(); }
+    if (view === 'listen') {
+      renderListen();
+      loadMusicState().then(function (st) {
+        if (!st || !st.loggedIn) return;
+        var needs = !DATA.playlists[MY_SLOT];
+        if (needs) return loadMyPlaylist();
+      }).then(function () { renderListen(); });
+    }
     if (view === 'circle') renderCircle();
     if (view === 'settings') renderSettings();
     if (view === 'characters') renderCharLibrary();
@@ -14070,8 +14077,55 @@ const DATA = {
   if (!DATA.playlists[listen.playlist]) listen.playlist = 0;
   if (!DATA.playlists[listen.playlist].songs[listen.song]) listen.song = 0;
 
-  function currentPlaylist() { return DATA.playlists[listen.playlist]; }
-  function currentSong() { return currentPlaylist().songs[listen.song]; }
+  function currentPlaylist() {
+    return DATA.playlists[listen.playlist] || DATA.playlists[0];
+  }
+  function currentSong() {
+    var pl = currentPlaylist();
+    return pl.songs[listen.song] || pl.songs[0] || { title: '', artist: '', dur: 1 };
+  }
+
+  /* ---------- 我的网易云歌单 ----------
+     只接一个：「休恋逝水，兰芝华玥」。登录后拉下来塞进 DATA.playlists，
+     结构和本地歌单完全一致，所以播放器、封面、切歌都不用改。 */
+  var MY_PLAYLIST_ID = '13979037654';
+  var MY_SLOT = 3;
+  var myPlaylistLoading = false;
+
+  function loadMyPlaylist() {
+    if (DATA.playlists[MY_SLOT] || myPlaylistLoading) return Promise.resolve();
+    myPlaylistLoading = true;
+    return serverFetch('/music/playlist/' + MY_PLAYLIST_ID).then(function (res) {
+      var songs = (res.songs || []).filter(function (x) { return x && x.id; }).map(function (x) {
+        return {
+          title: x.name,
+          artist: x.artist,
+          dur: x.dur || 0,
+          neteaseId: Number(x.id),
+          album: x.album,
+          coverUrl: x.cover || '',
+          note: ''
+        };
+      });
+      if (!songs.length) return;
+      DATA.playlists[MY_SLOT] = {
+        name: '休恋逝水，兰芝华玥',
+        desc: '我的网易云歌单',
+        songs: songs
+      };
+      // 第一次进来自动用它；之后尊重用户上一次的选择
+      if (listen.playlist === 0 && !state.listen.playlist) {
+        listen.playlist = MY_SLOT;
+        listen.song = 0;
+        listen.progress = 0;
+        state.listen = { playlist: MY_SLOT, song: 0 };
+        save();
+      }
+      renderListen();
+    }).catch(function () {
+      /* 拉不到就继续用本地歌单，不打扰 */
+    }).then(function () { myPlaylistLoading = false; });
+  }
 
   /* 网易云专辑封面：coverUrl 是 picUrl 原地址，显示时按尺寸加 ?param=WxH，
      由手机直接从网易云图片服务器加载；失败时退回主题同色素面唱片。 */
@@ -15483,7 +15537,10 @@ const DATA = {
     }).join('');
     return {
       title: '网易云歌单',
-      body: body + '<p class="sheet-note">封面来自网易云，按歌曲 id 直接加载；这一轮还不播放声音。</p>'
+      body: body + '<p class="sheet-note">' +
+        (musicState.loggedIn
+          ? '封面和音源都来自网易云，点歌就播。'
+          : '封面来自网易云。登录后会员歌也能完整播放。') + '</p>'
     };
   };
 

@@ -2429,11 +2429,13 @@
         desc: '我的网易云歌单',
         songs: songs
       };
-      // 第一次进来自动用它；之后尊重用户上一次的选择
-      if (listen.playlist === 0 && !state.listen.playlist) {
+      // 加载好就直接用它 —— 这个歌单就是你要的那个
+      if (listen.playlist !== MY_SLOT) {
         listen.playlist = MY_SLOT;
         listen.song = 0;
         listen.progress = 0;
+        playingSongId = "";
+        if (audioEl) { audioEl.pause(); audioEl.removeAttribute("src"); }
         state.listen = { playlist: MY_SLOT, song: 0 };
         save();
       }
