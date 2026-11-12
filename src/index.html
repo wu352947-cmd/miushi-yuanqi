@@ -337,28 +337,17 @@
 
         <!-- ④ 一起听 -->
         <section class="view view--circle" data-view="circle" aria-label="朋友圈">
-          <div class="circle-scroll">
-            <header class="page-head">
-              <h1 class="page-title serif" id="circleTitle">朋友圈</h1>
-              <p class="page-sub" id="circleSub">她身边发生的事</p>
-            </header>
-
-            <div class="circle-compose">
-              <div class="circle-compose__avatar" id="circleMeAvatar" aria-hidden="true"></div>
-              <div class="circle-compose__main">
-                <textarea id="circleInput" class="circle-compose__input" rows="2"
-                  placeholder="说点什么…" aria-label="发朋友圈"></textarea>
-                <div class="circle-compose__actions">
-                  <button class="mini-btn" type="button" data-a2="circle-generate">让她也发一条</button>
-                  <button class="btn btn--primary circle-compose__send" type="button" data-a2="circle-publish">发布</button>
-                </div>
-              </div>
-            </div>
-
-            <div class="circle-feed" id="circleFeed"></div>
-
-            <div class="circle-npcs" id="circleNpcs"></div>
+          <div class="wx-nav">
+            <button class="wx-nav__back" type="button" data-nav="home" aria-label="返回">
+              <svg viewBox="0 0 24 24" fill="none" width="22" height="22"><path d="M14.5 5.5 8 12l6.5 6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <span class="wx-nav__title">朋友圈</span>
+            <button class="wx-nav__post" type="button" data-a2="circle-compose" aria-label="发朋友圈">
+              <svg viewBox="0 0 24 24" fill="none" width="21" height="21"><rect x="3.4" y="6.2" width="17.2" height="13" rx="2.6" stroke="currentColor" stroke-width="1.6"/><path d="M8.2 6.2 9.6 3.8h4.8l1.4 2.4" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12.6" r="3.2" stroke="currentColor" stroke-width="1.6"/></svg>
+            </button>
           </div>
+          <div class="wx-list" id="circleFeed"></div>
+          <div class="wx-npcs" id="circleNpcs"></div>
         </section>
 
         <section class="view view--listen" data-view="listen" aria-label="一起听">

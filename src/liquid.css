@@ -2838,143 +2838,199 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
 }
 
 
-/* ---------- 朋友圈 ----------
-   一层独立世界：她发的、我发的、这个圈子里 NPC 发的。
-   卡片用和记忆页一致的玻璃底，不引入新的设计语言。 */
+/* ---------- 朋友圈（照微信的视觉来） ----------
+   没有卡片：白底、靠留白和头像分隔。
+   名字与评论名用微信的蓝 #576b95，互动区 #f7f7f7 灰底 4px 圆角。 */
 .view--circle {
+  background: #fff;
   overflow-y: auto;
 }
-.circle-scroll {
-  padding: 18px 16px 100px;
-  max-width: 720px;
-  margin: 0 auto;
-}
-.circle-compose {
+.wx-nav {
+  position: sticky;
+  top: 0;
+  z-index: 6;
   display: flex;
-  gap: 10px;
-  padding: 12px;
-  margin-bottom: 16px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, .62);
+  align-items: center;
+  justify-content: space-between;
+  height: 48px;
+  padding: 0 6px;
+  background: rgba(255, 255, 255, .96);
   backdrop-filter: blur(12px);
-  box-shadow: 0 2px 14px rgba(0, 0, 0, .04);
+  border-bottom: 1px solid rgba(0, 0, 0, .05);
 }
-.circle-compose__avatar {
-  width: 34px;
-  height: 34px;
-  flex: none;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  color: #fff;
-  background: linear-gradient(135deg, #f6c6d6, #e29ab2);
-}
-.circle-compose__main { flex: 1; min-width: 0; }
-.circle-compose__input {
-  width: 100%;
+.wx-nav__back,
+.wx-nav__post {
+  width: 38px;
+  height: 38px;
   border: 0;
   background: transparent;
-  resize: none;
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.65;
-  color: inherit;
-  outline: none;
-}
-.circle-compose__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
-}
-.circle-post {
-  padding: 14px 16px;
-  margin-bottom: 12px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, .72);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, .04);
-}
-.circle-post.is-mine { background: rgba(255, 240, 246, .86); }
-.circle-post.is-npc { background: rgba(255, 255, 255, .54); }
-.circle-post__head {
-  display: flex;
-  gap: 9px;
-  align-items: center;
-}
-.circle-post__avatar {
-  width: 32px;
-  height: 32px;
-  flex: none;
-  border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 13px;
+  color: #191919;
+  cursor: pointer;
+}
+.wx-nav__title {
+  font-size: 16.5px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  color: #191919;
+}
+.wx-list {
+  padding: 4px 0 90px;
+}
+.wx-post {
+  display: flex;
+  gap: 10px;
+  padding: 16px 14px 0;
+  margin-bottom: 14px;
+}
+.wx-post__avatar {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
   color: #fff;
-  background: linear-gradient(135deg, #f3c1d2, #d99cb2);
+  background: linear-gradient(135deg, #efb4c6, #d485a0);
 }
-.circle-post__who {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.32;
-}
-.circle-post__who b { font-size: 13px; font-weight: 600; }
-.circle-post__meta { font-size: 10.5px; opacity: .5; }
-.circle-post__text {
-  margin: 10px 0 0;
-  font-size: 13px;
-  line-height: 1.78;
-  white-space: pre-wrap;
-}
-.circle-post__replies {
-  margin-top: 10px;
-  padding: 8px 11px;
-  border-radius: 13px;
-  background: rgba(0, 0, 0, .032);
-}
-.circle-reply { font-size: 12px; line-height: 1.7; }
-.circle-reply__who { font-weight: 600; }
-.circle-reply__who::after { content: "："; }
-.circle-post__foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-}
-.circle-reply__input {
+.wx-post__body {
   flex: 1;
   min-width: 0;
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid rgba(0, 0, 0, .07);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .82);
-  font: inherit;
+}
+.wx-post__name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #576b95;
+}
+.wx-post__text {
+  margin: 5px 0 0;
+  font-size: 15px;
+  line-height: 1.62;
+  color: #191919;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.wx-post__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 9px;
+}
+.wx-post__time {
   font-size: 12px;
-  color: inherit;
+  color: #b2b2b2;
+}
+.wx-post__more {
+  min-width: 32px;
+  height: 21px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: #f2f2f2;
+  color: #576b95;
+  font-size: 12px;
+  letter-spacing: 1px;
+  line-height: 1;
+  cursor: pointer;
+}
+.wx-post__interact {
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  background: #f7f7f7;
+}
+.wx-post__likes {
+  font-size: 14px;
+  line-height: 1.72;
+  color: #576b95;
+}
+.wx-post__likes .heart {
+  margin-right: 4px;
+  font-size: 13px;
+}
+.wx-comment {
+  font-size: 14px;
+  line-height: 1.74;
+  color: #191919;
+  word-break: break-word;
+}
+.wx-comment__who {
+  color: #576b95;
+  font-weight: 600;
+}
+.wx-comment__who::after {
+  content: "：";
+  font-weight: 400;
+}
+.wx-post__reply {
+  display: flex;
+  gap: 8px;
+  margin-top: 9px;
+}
+.wx-post__reply input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #e6e6e6;
+  border-radius: 4px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  color: #191919;
   outline: none;
 }
-.circle-empty {
-  padding: 38px 0;
+.wx-post__reply button {
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 4px;
+  background: #f2f2f2;
+  color: #576b95;
+  font-size: 13px;
+  cursor: pointer;
+}
+.wx-post__reply button.is-ghost {
+  background: transparent;
+  color: #b2b2b2;
+}
+.wx-empty {
+  padding: 70px 0;
   text-align: center;
+  font-size: 13px;
+  color: #b2b2b2;
+  line-height: 1.9;
+}
+.wx-npcs {
+  margin: 8px 14px 0;
+  padding-bottom: 40px;
+}
+.wx-npcs__title {
+  margin: 0 0 6px;
   font-size: 12px;
-  opacity: .5;
+  color: #b2b2b2;
 }
-.circle-npcs { margin-top: 22px; }
-.circle-npcs__title {
-  margin: 0 0 8px;
-  font-size: 11px;
-  letter-spacing: .08em;
-  opacity: .5;
-}
-.circle-npc {
+.wx-npc {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 2px;
-  font-size: 12.5px;
-  border-bottom: 1px solid rgba(0, 0, 0, .04);
+  padding: 9px 0;
+  font-size: 13.5px;
+  border-bottom: 1px solid #f2f2f2;
 }
-.circle-npc__name { font-weight: 600; }
-.circle-npc__rel { flex: 1; font-size: 11.5px; opacity: .55; }
-.mini-btn--ghost { background: transparent; opacity: .55; }
+.wx-npc__name { color: #576b95; font-weight: 600; }
+.wx-npc__rel { flex: 1; font-size: 12.5px; color: #b2b2b2; }
+.wx-npc button {
+  border: 0;
+  background: transparent;
+  color: #b2b2b2;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.wx-actions { margin: 18px 0 4px; text-align: center; }
+.wx-actions button { padding: 8px 18px; border: 0; border-radius: 6px; background: #f2f2f2; color: #576b95; font-size: 13.5px; cursor: pointer; }

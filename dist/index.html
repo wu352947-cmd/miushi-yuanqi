@@ -4792,146 +4792,202 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
 }
 
 
-/* ---------- 朋友圈 ----------
-   一层独立世界：她发的、我发的、这个圈子里 NPC 发的。
-   卡片用和记忆页一致的玻璃底，不引入新的设计语言。 */
+/* ---------- 朋友圈（照微信的视觉来） ----------
+   没有卡片：白底、靠留白和头像分隔。
+   名字与评论名用微信的蓝 #576b95，互动区 #f7f7f7 灰底 4px 圆角。 */
 .view--circle {
+  background: #fff;
   overflow-y: auto;
 }
-.circle-scroll {
-  padding: 18px 16px 100px;
-  max-width: 720px;
-  margin: 0 auto;
-}
-.circle-compose {
+.wx-nav {
+  position: sticky;
+  top: 0;
+  z-index: 6;
   display: flex;
-  gap: 10px;
-  padding: 12px;
-  margin-bottom: 16px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, .62);
+  align-items: center;
+  justify-content: space-between;
+  height: 48px;
+  padding: 0 6px;
+  background: rgba(255, 255, 255, .96);
   backdrop-filter: blur(12px);
-  box-shadow: 0 2px 14px rgba(0, 0, 0, .04);
+  border-bottom: 1px solid rgba(0, 0, 0, .05);
 }
-.circle-compose__avatar {
-  width: 34px;
-  height: 34px;
-  flex: none;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  color: #fff;
-  background: linear-gradient(135deg, #f6c6d6, #e29ab2);
-}
-.circle-compose__main { flex: 1; min-width: 0; }
-.circle-compose__input {
-  width: 100%;
+.wx-nav__back,
+.wx-nav__post {
+  width: 38px;
+  height: 38px;
   border: 0;
   background: transparent;
-  resize: none;
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.65;
-  color: inherit;
-  outline: none;
-}
-.circle-compose__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
-}
-.circle-post {
-  padding: 14px 16px;
-  margin-bottom: 12px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, .72);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, .04);
-}
-.circle-post.is-mine { background: rgba(255, 240, 246, .86); }
-.circle-post.is-npc { background: rgba(255, 255, 255, .54); }
-.circle-post__head {
-  display: flex;
-  gap: 9px;
-  align-items: center;
-}
-.circle-post__avatar {
-  width: 32px;
-  height: 32px;
-  flex: none;
-  border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 13px;
+  color: #191919;
+  cursor: pointer;
+}
+.wx-nav__title {
+  font-size: 16.5px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  color: #191919;
+}
+.wx-list {
+  padding: 4px 0 90px;
+}
+.wx-post {
+  display: flex;
+  gap: 10px;
+  padding: 16px 14px 0;
+  margin-bottom: 14px;
+}
+.wx-post__avatar {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
   color: #fff;
-  background: linear-gradient(135deg, #f3c1d2, #d99cb2);
+  background: linear-gradient(135deg, #efb4c6, #d485a0);
 }
-.circle-post__who {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.32;
-}
-.circle-post__who b { font-size: 13px; font-weight: 600; }
-.circle-post__meta { font-size: 10.5px; opacity: .5; }
-.circle-post__text {
-  margin: 10px 0 0;
-  font-size: 13px;
-  line-height: 1.78;
-  white-space: pre-wrap;
-}
-.circle-post__replies {
-  margin-top: 10px;
-  padding: 8px 11px;
-  border-radius: 13px;
-  background: rgba(0, 0, 0, .032);
-}
-.circle-reply { font-size: 12px; line-height: 1.7; }
-.circle-reply__who { font-weight: 600; }
-.circle-reply__who::after { content: "："; }
-.circle-post__foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-}
-.circle-reply__input {
+.wx-post__body {
   flex: 1;
   min-width: 0;
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid rgba(0, 0, 0, .07);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .82);
-  font: inherit;
+}
+.wx-post__name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #576b95;
+}
+.wx-post__text {
+  margin: 5px 0 0;
+  font-size: 15px;
+  line-height: 1.62;
+  color: #191919;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.wx-post__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 9px;
+}
+.wx-post__time {
   font-size: 12px;
-  color: inherit;
+  color: #b2b2b2;
+}
+.wx-post__more {
+  min-width: 32px;
+  height: 21px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: #f2f2f2;
+  color: #576b95;
+  font-size: 12px;
+  letter-spacing: 1px;
+  line-height: 1;
+  cursor: pointer;
+}
+.wx-post__interact {
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  background: #f7f7f7;
+}
+.wx-post__likes {
+  font-size: 14px;
+  line-height: 1.72;
+  color: #576b95;
+}
+.wx-post__likes .heart {
+  margin-right: 4px;
+  font-size: 13px;
+}
+.wx-comment {
+  font-size: 14px;
+  line-height: 1.74;
+  color: #191919;
+  word-break: break-word;
+}
+.wx-comment__who {
+  color: #576b95;
+  font-weight: 600;
+}
+.wx-comment__who::after {
+  content: "：";
+  font-weight: 400;
+}
+.wx-post__reply {
+  display: flex;
+  gap: 8px;
+  margin-top: 9px;
+}
+.wx-post__reply input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #e6e6e6;
+  border-radius: 4px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  color: #191919;
   outline: none;
 }
-.circle-empty {
-  padding: 38px 0;
+.wx-post__reply button {
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 4px;
+  background: #f2f2f2;
+  color: #576b95;
+  font-size: 13px;
+  cursor: pointer;
+}
+.wx-post__reply button.is-ghost {
+  background: transparent;
+  color: #b2b2b2;
+}
+.wx-empty {
+  padding: 70px 0;
   text-align: center;
+  font-size: 13px;
+  color: #b2b2b2;
+  line-height: 1.9;
+}
+.wx-npcs {
+  margin: 8px 14px 0;
+  padding-bottom: 40px;
+}
+.wx-npcs__title {
+  margin: 0 0 6px;
   font-size: 12px;
-  opacity: .5;
+  color: #b2b2b2;
 }
-.circle-npcs { margin-top: 22px; }
-.circle-npcs__title {
-  margin: 0 0 8px;
-  font-size: 11px;
-  letter-spacing: .08em;
-  opacity: .5;
-}
-.circle-npc {
+.wx-npc {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 2px;
-  font-size: 12.5px;
-  border-bottom: 1px solid rgba(0, 0, 0, .04);
+  padding: 9px 0;
+  font-size: 13.5px;
+  border-bottom: 1px solid #f2f2f2;
 }
-.circle-npc__name { font-weight: 600; }
-.circle-npc__rel { flex: 1; font-size: 11.5px; opacity: .55; }
-.mini-btn--ghost { background: transparent; opacity: .55; }
+.wx-npc__name { color: #576b95; font-weight: 600; }
+.wx-npc__rel { flex: 1; font-size: 12.5px; color: #b2b2b2; }
+.wx-npc button {
+  border: 0;
+  background: transparent;
+  color: #b2b2b2;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.wx-actions { margin: 18px 0 4px; text-align: center; }
+.wx-actions button { padding: 8px 18px; border: 0; border-radius: 6px; background: #f2f2f2; color: #576b95; font-size: 13.5px; cursor: pointer; }
 
 /* ===== features/chat-history.css ===== */
 /* ===== 第三块：聊天记录管理（对话列表 / 最近的聊天 / 搜索 / 改名 / 人设三层 / 导入导出） ===== */
@@ -5473,28 +5529,17 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
 
         <!-- ④ 一起听 -->
         <section class="view view--circle" data-view="circle" aria-label="朋友圈">
-          <div class="circle-scroll">
-            <header class="page-head">
-              <h1 class="page-title serif" id="circleTitle">朋友圈</h1>
-              <p class="page-sub" id="circleSub">她身边发生的事</p>
-            </header>
-
-            <div class="circle-compose">
-              <div class="circle-compose__avatar" id="circleMeAvatar" aria-hidden="true"></div>
-              <div class="circle-compose__main">
-                <textarea id="circleInput" class="circle-compose__input" rows="2"
-                  placeholder="说点什么…" aria-label="发朋友圈"></textarea>
-                <div class="circle-compose__actions">
-                  <button class="mini-btn" type="button" data-a2="circle-generate">让她也发一条</button>
-                  <button class="btn btn--primary circle-compose__send" type="button" data-a2="circle-publish">发布</button>
-                </div>
-              </div>
-            </div>
-
-            <div class="circle-feed" id="circleFeed"></div>
-
-            <div class="circle-npcs" id="circleNpcs"></div>
+          <div class="wx-nav">
+            <button class="wx-nav__back" type="button" data-nav="home" aria-label="返回">
+              <svg viewBox="0 0 24 24" fill="none" width="22" height="22"><path d="M14.5 5.5 8 12l6.5 6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <span class="wx-nav__title">朋友圈</span>
+            <button class="wx-nav__post" type="button" data-a2="circle-compose" aria-label="发朋友圈">
+              <svg viewBox="0 0 24 24" fill="none" width="21" height="21"><rect x="3.4" y="6.2" width="17.2" height="13" rx="2.6" stroke="currentColor" stroke-width="1.6"/><path d="M8.2 6.2 9.6 3.8h4.8l1.4 2.4" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12.6" r="3.2" stroke="currentColor" stroke-width="1.6"/></svg>
+            </button>
           </div>
+          <div class="wx-list" id="circleFeed"></div>
+          <div class="wx-npcs" id="circleNpcs"></div>
         </section>
 
         <section class="view view--listen" data-view="listen" aria-label="一起听">
@@ -13263,10 +13308,11 @@ const DATA = {
       ' onerror="window.d2CoverError&&window.d2CoverError(this)"></span>';
   }
 
-  /* ---------- 朋友圈 ----------
+  /* ---------- 朋友圈（照微信来） ----------
      每个角色一套独立世界：她发的、我发的、这世界里 NPC 发的。
      只有「她和我」的动态进聊天上下文，NPC 的只在这里出现。 */
   var circleCache = { characterId: '', posts: [], npcs: [], loaded: false };
+  var circleReplyFor = '';   // 哪个帖子展开了评论框
 
   function circleChar() {
     return currentChar();
@@ -13277,16 +13323,23 @@ const DATA = {
     return n ? n.slice(0, 1) : '?';
   }
 
+  /* 微信那种相对时间：刚刚 / 12分钟前 / 3小时前 / 昨天 / 4天前 / 11月10日 */
+  function wxTime(at) {
+    var raw = String(at || '').trim();
+    if (!raw) return '';
+    var t = new Date(raw.replace(' ', 'T'));
+    if (isNaN(t.getTime())) return raw.slice(5, 16).replace('T', ' ');
+    var diff = (Date.now() - t.getTime()) / 1000;
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
+    if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
+    if (diff < 172800) return '昨天';
+    if (diff < 2592000) return Math.floor(diff / 86400) + '天前';
+    return (t.getMonth() + 1) + '月' + t.getDate() + '日';
+  }
+
   function renderCircle() {
     var char = circleChar();
-    var title = document.getElementById('circleTitle');
-    var sub = document.getElementById('circleSub');
-    if (title) title.textContent = char ? (char.name + '的朋友圈') : '朋友圈';
-    if (sub) sub.textContent = circleCache.npcs.length
-      ? '这个圈子里有 ' + circleCache.npcs.length + ' 个人'
-      : '她身边发生的事';
-    var me = document.getElementById('circleMeAvatar');
-    if (me) me.textContent = circleInitial((state.userPersonas[0] || {}).name || '我');
     renderCircleFeed();
     if (char) loadCircle();
   }
@@ -13305,7 +13358,7 @@ const DATA = {
             npcs: (res && res.npcs) || [],
             loaded: true
           };
-          renderCircle();
+          renderCircleFeed();
         }
         return res;
       })
@@ -13313,27 +13366,29 @@ const DATA = {
   }
 
   function circlePostHtml(post) {
-    var mine = post.authorKind === 'persona';
-    var npc = post.authorKind === 'npc';
-    var tag = mine ? '我' : (npc ? '朋友' : '她');
     var replies = (post.replies || []).map(function (r) {
-      return '<div class="circle-reply"><span class="circle-reply__who">' +
-        esc(r.authorName) + '</span><span class="circle-reply__text">' + esc(r.text) + '</span></div>';
+      return '<div class="wx-comment"><span class="wx-comment__who">' +
+        esc(r.authorName) + '</span>' + esc(r.text) + '</div>';
     }).join('');
-    return '<article class="circle-post' + (mine ? ' is-mine' : '') + (npc ? ' is-npc' : '') + '">' +
-      '<div class="circle-post__head">' +
-        '<span class="circle-post__avatar">' + esc(circleInitial(post.authorName)) + '</span>' +
-        '<span class="circle-post__who"><b>' + esc(post.authorName) + '</b>' +
-        '<span class="circle-post__meta">' + esc(String(post.at || '').slice(5, 16).replace('T', ' ')) +
-        ' · ' + tag + '</span></span>' +
-      '</div>' +
-      '<p class="circle-post__text">' + esc(post.text) + '</p>' +
-      (replies ? '<div class="circle-post__replies">' + replies + '</div>' : '') +
-      '<div class="circle-post__foot">' +
-        '<input class="circle-reply__input" type="text" maxlength="200" placeholder="评论…" ' +
-          'data-reply-for="' + esc(post.id) + '" aria-label="评论">' +
-        '<button class="mini-btn" type="button" data-a2="circle-reply" data-id="' + esc(post.id) + '">发送</button>' +
-        '<button class="mini-btn mini-btn--ghost" type="button" data-a2="circle-drop" data-id="' + esc(post.id) + '">删</button>' +
+    var open = circleReplyFor === post.id;
+    return '<article class="wx-post">' +
+      '<div class="wx-post__avatar">' + esc(circleInitial(post.authorName)) + '</div>' +
+      '<div class="wx-post__body">' +
+        '<p class="wx-post__name">' + esc(post.authorName) + '</p>' +
+        '<p class="wx-post__text">' + esc(post.text) + '</p>' +
+        '<div class="wx-post__meta">' +
+          '<span class="wx-post__time">' + esc(wxTime(post.at)) + '</span>' +
+          '<button class="wx-post__more" type="button" data-a2="circle-more" data-id="' +
+            esc(post.id) + '" aria-label="评论或删除">···</button>' +
+        '</div>' +
+        (replies ? '<div class="wx-post__interact">' + replies + '</div>' : '') +
+        (open
+          ? '<div class="wx-post__reply">' +
+              '<input type="text" maxlength="200" placeholder="评论" data-reply-for="' + esc(post.id) + '" aria-label="评论">' +
+              '<button type="button" data-a2="circle-reply" data-id="' + esc(post.id) + '">发送</button>' +
+              '<button class="is-ghost" type="button" data-a2="circle-drop" data-id="' + esc(post.id) + '">删除</button>' +
+            '</div>'
+          : '') +
       '</div>' +
     '</article>';
   }
@@ -13342,25 +13397,36 @@ const DATA = {
     var box = document.getElementById('circleFeed');
     if (!box) return;
     if (!circleCache.posts.length) {
-      box.innerHTML = '<p class="circle-empty">' +
-        (circleCache.loaded ? '还没有动态。聊几句，她会自己发一条。' : '加载中…') + '</p>';
+      box.innerHTML = '<p class="wx-empty">' +
+        (circleCache.loaded
+          ? '还没有动态。<br>聊几句，她会自己发一条。'
+          : '加载中…') + '</p>';
     } else {
       box.innerHTML = circleCache.posts.map(circlePostHtml).join('');
     }
     var npcBox = document.getElementById('circleNpcs');
     if (!npcBox) return;
+    var extra = '<div class="wx-actions"><button type="button" data-a2="circle-generate">让她也发一条</button></div>';
     if (!circleCache.npcs.length) {
-      npcBox.innerHTML = '';
+      npcBox.innerHTML = extra;
       return;
     }
-    npcBox.innerHTML = '<p class="circle-npcs__title">这个圈子里的人</p>' +
+    npcBox.innerHTML = extra + '<p class="wx-npcs__title">这个圈子里的人</p>' +
       circleCache.npcs.map(function (n) {
-        return '<div class="circle-npc">' +
-          '<span class="circle-npc__name">' + esc(n.name) + '</span>' +
-          '<span class="circle-npc__rel">' + esc(n.relation || '') + '</span>' +
-          '<button class="mini-btn mini-btn--ghost" type="button" data-a2="circle-npc-drop" data-id="' +
-            esc(n.id) + '">删</button></div>';
+        return '<div class="wx-npc">' +
+          '<span class="wx-npc__name">' + esc(n.name) + '</span>' +
+          '<span class="wx-npc__rel">' + esc(n.relation || '') + '</span>' +
+          '<button type="button" data-a2="circle-npc-drop" data-id="' + esc(n.id) + '">删除</button></div>';
       }).join('');
+  }
+
+  function toggleCircleReply(postId) {
+    circleReplyFor = circleReplyFor === postId ? '' : postId;
+    renderCircleFeed();
+    if (circleReplyFor) {
+      var el = document.querySelector('[data-reply-for="' + circleReplyFor + '"]');
+      if (el) el.focus();
+    }
   }
 
   function publishCircle() {
@@ -13371,8 +13437,8 @@ const DATA = {
     if (!text) { toast('写点什么再发。'); return; }
     serverFetch('/moments', { method: 'POST', body: { characterId: char.id, text: text } })
       .then(function () {
-        if (input) input.value = '';
-        toast('发出去了。');
+        closeSheet();
+        toast('发表成功。');
         return loadCircle();
       })
       .catch(function (err) { toast(err.message || '没发出去。'); });
@@ -13386,14 +13452,14 @@ const DATA = {
       method: 'POST',
       body: { text: text }
     }).then(function () {
-      if (input) input.value = '';
+      circleReplyFor = '';
       return loadCircle();
     }).catch(function (err) { toast(err.message || '评论没发出去。'); });
   }
 
   function circleDropPost(postId) {
     serverFetch('/moments/' + encodeURIComponent(postId), { method: 'DELETE' })
-      .then(function () { toast('删掉了。'); return loadCircle(); })
+      .then(function () { circleReplyFor = ''; toast('删掉了。'); return loadCircle(); })
       .catch(function (err) { toast(err.message || '没删掉。'); });
   }
 
@@ -13415,6 +13481,21 @@ const DATA = {
       return loadCircle();
     }).catch(function (err) { toast(err.message || '这次没写出来。'); });
   }
+
+  SHEETS.circlePost = function () {
+    var char = circleChar();
+    return {
+      title: '发表',
+      body: '<textarea id="circleInput" '.concat(
+        'style="width:100%;min-height:140px;border:0;background:transparent;resize:none;',
+        'font:inherit;font-size:15px;line-height:1.7;color:inherit;outline:none" ',
+        'placeholder="这一刻的想法…" aria-label="发朋友圈"></textarea>',
+        '<p class="sheet-note" style="text-align:left">发在 ', esc(char ? char.name : '她'), ' 的朋友圈里。</p>'
+      ),
+      foot: '<button class="btn" type="button" data-close>取消</button>' +
+        '<button class="btn btn--primary" type="button" data-a2="circle-publish">发表</button>'
+    };
+  };
 
   function renderListen() {
     var song = currentSong();
@@ -16116,7 +16197,9 @@ const DATA = {
 
   /* ---------------- A2 交互分发 ---------------- */
   function handleA2Action(action, el) {
+    if (action === 'circle-compose') { openSheet('circlePost'); return true; }
     if (action === 'circle-publish') { publishCircle(); return true; }
+    if (action === 'circle-more') { toggleCircleReply(el.getAttribute('data-id')); return true; }
     if (action === 'circle-reply') { circleReply(el.getAttribute('data-id')); return true; }
     if (action === 'circle-drop') { circleDropPost(el.getAttribute('data-id')); return true; }
     if (action === 'circle-npc-drop') { circleDropNpc(el.getAttribute('data-id')); return true; }
