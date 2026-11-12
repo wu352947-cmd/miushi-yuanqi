@@ -26,11 +26,21 @@ from .errors import ApiError
 LOG = logging.getLogger("msyq")
 
 NCM_BASE = (os.environ.get("MSYQ_NCM_URL") or "http://127.0.0.1:3000").rstrip("/")
-NCM_TIMEOUT = 25
+NCM_TIMEOUT = 35
 
 
-def _call(path: str, params: dict[str, Any] | None = None, cookie: str = "", timeout: int = NCM_TIMEOUT) -> dict:
-    """GET 一次 ncm-api。参数里的 None/空串会被丢掉。"""
+def _call(
+    path: str,
+    params: dict[str, Any] | None = None,
+    cookie: str = "",
+    timeout: int = NCM_TIMEOUT,
+    retries: int = 1,
+) -> dict:
+    """GET 一次 ncm-api。参数里的 None/空串会被丢掉。
+
+    VPS 到网易云国内接口的 RTT 不稳定（1~4 秒，偶尔更久），单次调用很容易
+    正好赶上一次卡顿就整条失败。所以默认给一次重试。
+    """
     clean = {k: v for k, v in (params or {}).items() if v not in (None, "")}
     url = NCM_BASE + path
     if clean:
@@ -38,6 +48,19 @@ def _call(path: str, params: dict[str, Any] | None = None, cookie: str = "", tim
     req = urllib.request.Request(url, headers={"User-Agent": "msyq/1.0"})
     if cookie:
         req.add_header("Cookie", cookie)
+    attempt = 0
+    while True:
+        try:
+            return _once(req, path, timeout)
+        except ApiError as exc:
+            # 只有"连不上/超时"这类才重试；业务错误（4xx 带 body）直接抛出
+            if attempt >= retries or exc.kind != "badgateway":
+                raise
+            attempt += 1
+            LOG.info("网易云接口重试 %d/%d：%s", attempt, retries, path)
+
+
+def _once(req, path: str, timeout: int) -> dict:
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode() or "{}")
