@@ -4727,11 +4727,12 @@
     };
   };
   /* 预算滑轨用对数刻度：4K~1024K 之间，线性刻度下 32K 会挤在最左边。
-     pos 0~100 → 4K~1M：pos=0 是 4K，pos≈37 是 32K，pos=100 是 1024K。 */
+     pos 0~1000 → 4K~1M：pos=0 是 4K，pos≈375 是 32K，pos=1000 是 1024K。
+     刻度给到 1000 而不是 100，是为了回来后还能落在原值上（100 档时 32K 会变成 33K）。 */
   var BUDGET_MIN_K = 4;
   var BUDGET_MAX_K = 1024;
   function budgetPosToK(pos) {
-    var t = Math.max(0, Math.min(100, Number(pos) || 0)) / 100;
+    var t = Math.max(0, Math.min(1000, Number(pos) || 0)) / 1000;
     var k = Math.exp(Math.log(BUDGET_MIN_K) + (Math.log(BUDGET_MAX_K) - Math.log(BUDGET_MIN_K)) * t);
     // 小数值按 1K 取整，上了 64K 按 4K 取整，免得显示 33.7K 这种数字
     k = k < 64 ? Math.round(k) : Math.round(k / 4) * 4;
@@ -4740,7 +4741,7 @@
   function budgetKToPos(k) {
     var v = Math.max(BUDGET_MIN_K, Math.min(BUDGET_MAX_K, Number(k) || 32));
     var t = (Math.log(v) - Math.log(BUDGET_MIN_K)) / (Math.log(BUDGET_MAX_K) - Math.log(BUDGET_MIN_K));
-    return Math.round(t * 100);
+    return Math.round(t * 1000);
   }
   function budgetSubText(k) {
     var capK = Math.round(contextBudget() / 1000);
@@ -4812,7 +4813,7 @@
     body += '<div class="list-row list-row--static list-row--stack">' +
       '<span class="row-main"><span class="row-title serif">上下文预算</span>' +
       '<span class="row-sub" id="ctxBudgetSub">' + budgetSubText(cbK) + '</span></span>' +
-      '<input class="reason-range" id="ctxBudgetRange" type="range" min="0" max="100" step="1" ' +
+      '<input class="reason-range" id="ctxBudgetRange" type="range" min="0" max="1000" step="1" ' +
       'value="' + budgetKToPos(cbK) + '" aria-label="上下文预算">' +
       '<div class="reason-scale"><span>4K</span><span>32K</span><span>128K</span><span>1M</span></div></div>';
     body += '<div class="list-row list-row--static">' +
