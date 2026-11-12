@@ -141,3 +141,50 @@ def test_reply_author_matches(client, monkeypatch):
     name = r.json()["post"]["authorName"]
     rr = client.post("/api/moments/%s/replies" % pid, json={"text": "y"})
     assert rr.json()["reply"]["authorName"] == name
+
+PNG_1PX = (
+    b"\x89PNG\r\n\x1a\n"
+    b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+    b"\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+def test_post_images_upload_list_delete(client, monkeypatch):
+    """配图：只收图片、路径进库、文件落盘、能删。"""
+    monkeypatch.setenv("MSYQ_MOCK", "1")
+    _prime(client)
+    pid = client.post(
+        "/api/moments", json={"characterId": "miao", "text": "今天的光"}
+    ).json()["post"]["id"]
+
+    r = client.post(
+        "/api/moments/%s/images" % pid,
+        files=[
+            ("files", ("a.png", PNG_1PX, "image/png")),
+            ("files", ("b.png", PNG_1PX, "image/png")),
+        ],
+    )
+    assert r.status_code == 200, r.text
+    imgs = r.json()["images"]
+    assert len(imgs) == 2
+    assert imgs[0]["path"].startswith("/uploads/posts/")
+
+    # 列表里每条动态都带着图
+    feed = client.get("/api/moments?character_id=miao").json()
+    assert len(feed["posts"][0]["images"]) == 2
+
+    # 不是图片的直接拒掉
+    bad = client.post(
+        "/api/moments/%s/images" % pid,
+        files=[("files", ("x.txt", b"not an image", "text/plain"))],
+    )
+    assert bad.status_code == 400
+
+    # 删掉第一张，剩下的重新编号前仍指向原文件
+    gone = client.delete("/api/moments/%s/images/0" % pid)
+    assert gone.status_code == 200, gone.text
+    left = gone.json()["images"]
+    assert len(left) == 1
+    assert left[0]["path"].endswith("02.png")

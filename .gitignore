@@ -9,6 +9,8 @@ data/*.db
 data/*.db-*
 data/*.sqlite
 data/*.sqlite-*
+# 朋友圈配图（用户数据，不入库）
+data/uploads/
 
 # Python
 __pycache__/

@@ -4,7 +4,7 @@
 不然会被当成 id 吃掉。
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 
 from .. import db, moments
 from ..errors import ApiError
@@ -126,3 +126,81 @@ async def npc_comment(post_id: str, conn=Depends(get_conn)) -> dict:
     if not result.get("ok"):
         raise ApiError("badrequest", str(result.get("message") or "这次没人评论。"))
     return result
+
+
+# ---------------- 配图 ----------------
+# 图片放 data/uploads/posts/<post_id>/<n>.<ext>，库里只存路径。
+# 不往 SQLite 里塞 base64：一张手机照片转 base64 就是几 MB，库会迅速膨胀，
+# 而库每 5 分钟就被整份复制一次（同步），塞进去等于自己给自己加负担。
+MAX_IMAGE_BYTES = 6 * 1024 * 1024
+MAX_IMAGES = 9
+
+
+def _sniff_ext(raw: bytes) -> str:
+    """只认文件头，不信客户端给的扩展名。"""
+    if raw[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "webp"
+    return ""
+
+
+@router.post("/{post_id}/images")
+async def upload_post_images(
+    post_id: str,
+    files: list[UploadFile] = File(...),
+    conn=Depends(get_conn),
+) -> dict:
+    """给一条已存在的动态追加图片。多张一次传，最多凑满 9 张。"""
+    row = db.get_post_row(conn, post_id)
+    if not row:
+        raise ApiError("notfound", "这条动态已经不在了。", status=404)
+    existing = list(db.post_json(row).get("images") or [])
+    room = MAX_IMAGES - len(existing)
+    if room <= 0:
+        raise ApiError("badrequest", "最多 %d 张。" % MAX_IMAGES)
+
+    folder = db.data_dir() / "uploads" / "posts" / post_id
+    folder.mkdir(parents=True, exist_ok=True)
+
+    added: list[dict] = []
+    for upload in files[:room]:
+        raw = await upload.read()
+        if not raw or len(raw) > MAX_IMAGE_BYTES:
+            continue
+        ext = _sniff_ext(raw)
+        if not ext:
+            continue
+        name = "%02d.%s" % (len(existing) + len(added) + 1, ext)
+        (folder / name).write_bytes(raw)
+        added.append({"path": "/uploads/posts/" + post_id + "/" + name, "size": len(raw)})
+
+    if not added:
+        raise ApiError("badrequest", "这几张不是图片，或者太大了。")
+
+    merged = (existing + added)[:MAX_IMAGES]
+    db.set_post_images(conn, post_id, merged)
+    fresh = db.get_post_row(conn, post_id)
+    return {"ok": True, "images": merged, "post": db.post_json(fresh)}
+
+
+@router.delete("/{post_id}/images/{index}")
+def drop_post_image(post_id: str, index: int, conn=Depends(get_conn)) -> dict:
+    row = db.get_post_row(conn, post_id)
+    if not row:
+        raise ApiError("notfound", "这条动态已经不在了。", status=404)
+    images = list(db.post_json(row).get("images") or [])
+    if index < 0 or index >= len(images):
+        raise ApiError("badrequest", "这张图不在列表里。")
+    gone = images.pop(index)
+    path = str(gone.get("path") or "")
+    if path.startswith("/uploads/"):
+        target = db.data_dir() / path[len("/uploads/"):]
+        try:
+            target.unlink()
+        except OSError:
+            pass
+    db.set_post_images(conn, post_id, images)
+    return {"ok": True, "images": images}

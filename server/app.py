@@ -210,6 +210,11 @@ for name, directory in (("assets", ROOT_DIR / "assets"), ("wallpapers", ROOT_DIR
     if directory.exists():
         app.mount("/" + name, StaticFiles(directory=directory), name=name)
 
+# 朋友圈配图：图片走静态文件，不进数据库
+_uploads = db.data_dir() / "uploads"
+_uploads.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=_uploads), name="uploads")
+
 
 # --------------------------------------------------------------------------- 本地启动
 def main() -> None:

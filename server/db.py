@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - 兜底
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 # --------------------------------------------------------------------------- 路径
@@ -365,6 +365,7 @@ SCHEMA: list[str] = [
       at TEXT NOT NULL DEFAULT '',
       source TEXT NOT NULL DEFAULT 'manual',
       locked INTEGER NOT NULL DEFAULT 0,
+      images_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL
     )
     """,
@@ -492,6 +493,14 @@ def _migrate(conn, current: int) -> None:
                     "VALUES (?, ?, ?, ?, '', '', ?, ?)",
                     (new_id("bond"), pid, cid, started, now, now),
                 )
+    if current < 8:
+        # v8：朋友圈配图。库里只留路径数组，图片本体在 data/uploads/ 下，
+        # 这样每 5 分钟整体复制的同步层不会因为图片变重。
+        post_cols = _columns(conn, "posts")
+        if "images_json" not in post_cols:
+            conn.execute(
+                "ALTER TABLE posts ADD COLUMN images_json TEXT NOT NULL DEFAULT '[]'"
+            )
 
 
 def init_db() -> None:
@@ -1847,6 +1856,10 @@ def delete_digest(conn, chat_id: str) -> bool:
 
 
 def post_json(row, replies=None) -> dict[str, Any]:
+    try:
+        images = jloads(row["images_json"] or "[]", [])
+    except (KeyError, IndexError, TypeError):
+        images = []
     out = {
         "id": row["id"],
         "characterId": row["character_id"],
@@ -1858,6 +1871,7 @@ def post_json(row, replies=None) -> dict[str, Any]:
         "at": row["at"],
         "source": row["source"],
         "locked": bool(row["locked"]),
+        "images": images if isinstance(images, list) else [],
         "createdAt": row["created_at"],
         "replies": replies or [],
     }
@@ -1887,6 +1901,14 @@ def npc_json(row) -> dict[str, Any]:
         "lastSeenAt": row["last_seen_at"],
         "createdAt": row["created_at"],
     }
+
+
+def set_post_images(conn, post_id: str, images: list[dict[str, Any]]) -> None:
+    """整组替换某条动态的配图路径。文件本身的增删由调用方负责。"""
+    conn.execute(
+        "UPDATE posts SET images_json = ? WHERE id = ?",
+        (json.dumps(images, ensure_ascii=False), post_id),
+    )
 
 
 def list_posts(conn, character_id: str, limit: int = 50) -> list[dict[str, Any]]:

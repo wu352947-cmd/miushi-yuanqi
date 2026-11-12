@@ -20,6 +20,8 @@ for path in (ROOT, TESTS_DIR):
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("APP_SECRET", "test-secret")
     monkeypatch.setenv("MSYQ_DB_PATH", str(tmp_path / "test.db"))
+    # 配图会落盘，也让它在临时目录里，别污染项目 data/
+    monkeypatch.setenv("MSYQ_DATA_DIR", str(tmp_path))
     monkeypatch.delenv("APP_PASSWORD", raising=False)
     monkeypatch.delenv("MSYQ_MOCK", raising=False)
     monkeypatch.delenv("MSYQ_MOCK_400", raising=False)

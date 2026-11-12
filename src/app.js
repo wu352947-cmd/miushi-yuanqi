@@ -2280,12 +2280,21 @@
       return '<div class="wx-comment"><span class="wx-comment__who">' +
         esc(r.authorName) + '</span>' + esc(r.text) + '</div>';
     }).join('');
+    var imgs = post.images || [];
+    var grid = imgs.length
+      ? '<div class="wx-post__imgs" data-n="' + imgs.length + '">' +
+          imgs.map(function (im) {
+            return '<img src="' + esc(im.path || '') + '" alt="" loading="lazy" decoding="async">';
+          }).join('') +
+        '</div>'
+      : '';
     var open = circleReplyFor === post.id;
     return '<article class="wx-post">' +
       '<div class="wx-post__avatar">' + esc(circleInitial(post.authorName)) + '</div>' +
       '<div class="wx-post__body">' +
         '<p class="wx-post__name">' + esc(post.authorName) + '</p>' +
         '<p class="wx-post__text">' + esc(post.text) + '</p>' +
+        grid +
         '<div class="wx-post__meta">' +
           '<span class="wx-post__time">' + esc(wxTime(post.at)) + '</span>' +
           '<button class="wx-post__more" type="button" data-a2="circle-more" data-id="' +
@@ -2339,14 +2348,101 @@
     }
   }
 
+  /* ---------- 配图 ---------- */
+  /* 图片存在服务器 data/uploads/ 下，库里只留路径。
+     上传前先在浏览器里缩到 1600px、JPEG 0.82——手机原图动辄 4MB，
+     原样传上去既慢又占盘，而朋友圈根本用不到那个分辨率。 */
+  var circlePending = [];
+
+  function compressImage(file, maxSide, quality) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var w = img.naturalWidth || 1;
+          var h = img.naturalHeight || 1;
+          var scale = Math.min(1, maxSide / Math.max(w, h));
+          var cw = Math.max(1, Math.round(w * scale));
+          var ch = Math.max(1, Math.round(h * scale));
+          var cv = document.createElement('canvas');
+          cv.width = cw;
+          cv.height = ch;
+          cv.getContext('2d').drawImage(img, 0, 0, cw, ch);
+          cv.toBlob(function (blob) {
+            URL.revokeObjectURL(url);
+            if (blob) resolve(blob); else reject(new Error('这张图处理不了'));
+          }, 'image/jpeg', quality);
+        } catch (err) {
+          URL.revokeObjectURL(url);
+          reject(err);
+        }
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        reject(new Error('读不出这张图'));
+      };
+      img.src = url;
+    });
+  }
+
+  function renderCirclePreview() {
+    var box = document.getElementById('circlePreview');
+    if (!box) return;
+    box.innerHTML = circlePending.map(function (b, i) {
+      return '<span class="wx-pick-item"><img src="' + URL.createObjectURL(b) + '" alt="">' +
+        '<button type="button" data-a2="circle-unpick" data-idx="' + i + '" aria-label="移除">×</button></span>';
+    }).join('');
+  }
+
+  function onCircleFiles(input) {
+    var files = Array.prototype.slice.call(input.files || []);
+    input.value = '';
+    if (!files.length) return;
+    var room = 9 - circlePending.length;
+    if (room <= 0) { toast('最多 9 张。'); return; }
+    Promise.all(files.slice(0, room).map(function (f) {
+      return compressImage(f, 1600, 0.82).catch(function () { return null; });
+    })).then(function (blobs) {
+      var ok = 0;
+      blobs.forEach(function (b) { if (b) { circlePending.push(b); ok += 1; } });
+      renderCirclePreview();
+      if (!ok) toast('这几张读不出来。');
+      else if (circlePending.length >= 9) toast('已经 9 张了。');
+    });
+  }
+
+  function uploadCircleImages(postId, blobs) {
+    var fd = new FormData();
+    blobs.forEach(function (b, i) { fd.append('files', b, 'p' + i + '.jpg'); });
+    return serverFetch('/moments/' + encodeURIComponent(postId) + '/images', {
+      method: 'POST',
+      body: fd
+    });
+  }
+
+  (function bindCirclePicker() {
+    document.addEventListener('change', function (e) {
+      var t = e.target;
+      if (t && t.id === 'circleFiles') onCircleFiles(t);
+    });
+  })();
+
   function publishCircle() {
     var char = circleChar();
     var input = document.getElementById('circleInput');
     var text = (input && input.value || '').trim();
     if (!char) { toast('先选一个角色。'); return; }
-    if (!text) { toast('写点什么再发。'); return; }
+    if (!text) { toast('配一句话吧，纯图先不支持。'); return; }
+    var blobs = circlePending.slice();
     serverFetch('/moments', { method: 'POST', body: { characterId: char.id, text: text } })
+      .then(function (res) {
+        var post = res && res.post;
+        if (!blobs.length || !post || !post.id) return null;
+        return uploadCircleImages(post.id, blobs);
+      })
       .then(function () {
+        circlePending = [];
         closeSheet();
         toast('发表成功。');
         return loadCircle();
@@ -2394,12 +2490,19 @@
 
   SHEETS.circlePost = function () {
     var char = circleChar();
+    circlePending = [];   // 每次打开面板都是空手开始
     return {
       title: '发表',
       body: '<textarea id="circleInput" '.concat(
         'style="width:100%;min-height:140px;border:0;background:transparent;resize:none;',
         'font:inherit;font-size:15px;line-height:1.7;color:inherit;outline:none" ',
         'placeholder="这一刻的想法…" aria-label="发朋友圈"></textarea>',
+        '<div class="wx-picker">',
+        '<input id="circleFiles" type="file" accept="image/*" multiple hidden>',
+        '<button class="wx-pick-btn" type="button" data-a2="circle-pick">＋ 照片</button>',
+        '<span class="wx-pick-tip">最多 9 张，会自动缩小</span>',
+        '</div>',
+        '<div id="circlePreview" class="wx-preview"></div>',
         '<p class="sheet-note" style="text-align:left">发在 ', esc(char ? char.name : '她'), ' 的朋友圈里。</p>'
       ),
       foot: '<button class="btn" type="button" data-close>取消</button>' +
@@ -5265,6 +5368,19 @@
     if (action === 'circle-drop') { circleDropPost(el.getAttribute('data-id')); return true; }
     if (action === 'circle-npc-drop') { circleDropNpc(el.getAttribute('data-id')); return true; }
     if (action === 'circle-generate') { generateCirclePost(); return true; }
+    if (action === 'circle-pick') {
+      var fileInput = document.getElementById('circleFiles');
+      if (fileInput) fileInput.click();
+      return true;
+    }
+    if (action === 'circle-unpick') {
+      var pickIdx = Number(el.getAttribute('data-idx'));
+      if (pickIdx >= 0 && pickIdx < circlePending.length) {
+        circlePending.splice(pickIdx, 1);
+        renderCirclePreview();
+      }
+      return true;
+    }
     if (action === 'ctx-open') { openContextSheet(); return true; }
     if (action === 'ctx-run') { closeSheet(); runCompress(); return true; }
     if (action === 'ctx-digest') { openSheet('digest'); return true; }
