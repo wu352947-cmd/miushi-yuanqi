@@ -1808,8 +1808,9 @@
   }
 
   function renderWx() {
+    var titles = { chats: '微信', contacts: '通讯录', me: '我' };
     var title = document.getElementById('wxTitle');
-    if (title) title.textContent = wxTabName === 'chats' ? '微信' : '通讯录';
+    if (title) title.textContent = titles[wxTabName] || '微信';
     $$('.wx-panel').forEach(function (p) {
       p.hidden = p.getAttribute('data-wx-panel') !== wxTabName;
     });
@@ -1817,9 +1818,21 @@
       var on = t.getAttribute('data-wx-tab') === wxTabName;
       t.classList.toggle('is-on', on);
       t.setAttribute('aria-current', String(on));
+      /* 发现不是面板，是跳出去的入口，别让它被点亮成当前页 */
+      if (!t.hasAttribute('data-wx-tab')) t.classList.remove('is-on');
     });
     renderWxChats();
     renderWxContacts();
+    renderWxMe();
+  }
+
+  function renderWxMe() {
+    var sub2 = document.getElementById('wxMeSub');
+    if (!sub2) return;
+    paintAllAvatars();
+    var c = currentChar();
+    if (!c) { sub2.textContent = '还没选角色'; return; }
+    sub2.textContent = '和' + c.name + ' 在一起第 ' + daysTogether(bondStartDate()) + ' 天';
   }
 
   function wxTab(name) {

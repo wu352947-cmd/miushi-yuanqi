@@ -2815,6 +2815,57 @@ html[data-theme="ice"] .tabbar { background: linear-gradient(180deg, rgba(252, 2
 }
 .wx-tab__label { font-size: 10.5px; letter-spacing: .02em; }
 
+.wx-me { background: #fff; }
+.wx-me__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 18px 22px;
+  background: #fff;
+  border-bottom: 1px solid rgba(0, 0, 0, .05);
+}
+.wx-me__ava {
+  width: 62px;
+  height: 62px;
+  border-radius: 6px;
+  flex: none;
+  font-size: 24px;
+}
+.wx-me__info { min-width: 0; }
+.wx-me__name {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 600;
+  color: #111;
+}
+.wx-me__sub {
+  margin: 5px 0 0;
+  font-size: 13px;
+  color: #9a9a9a;
+}
+
+.wx-me__cells { background: #fff; }
+.wx-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 18px;
+  border: 0;
+  border-top: 1px solid rgba(0, 0, 0, .045);
+  background: #fff;
+  font: inherit;
+  font-size: 15.5px;
+  color: #222;
+  cursor: pointer;
+  text-align: left;
+}
+.wx-cell:first-child { border-top: 0; }
+.wx-cell:active { background: #f2f2f2; }
+.wx-cell__arrow { color: #c4c4c4; display: grid; place-items: center; }
+.wx-cell__arrow svg { width: 17px; height: 17px; }
+
 /* ---------- 朋友圈点赞 ---------- */
 /* 微信：互动区第一行是「♡ 名字」，名字蓝色，点赞和评论之间有一条浅分线。 */
 .wx-post__likes {
@@ -5641,6 +5692,31 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
             <div class="wx-panel" data-wx-panel="contacts" hidden>
               <div class="wx-rows" id="wxContacts"></div>
             </div>
+            <div class="wx-panel" data-wx-panel="me" hidden>
+              <div class="wx-me">
+                <div class="wx-me__head">
+                  <span class="avatar avatar--me wx-me__ava" data-av="persona">杭</span>
+                  <div class="wx-me__info">
+                    <p class="wx-me__name" data-nm="persona">杭杭</p>
+                    <p class="wx-me__sub" id="wxMeSub">还没选角色</p>
+                  </div>
+                </div>
+                <div class="wx-me__cells">
+                  <button class="wx-cell" type="button" data-nav="memory">
+                    <span class="wx-cell__label">记忆</span>
+                    <span class="wx-cell__arrow" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><path d="M8 5.6 12.4 10 8 14.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                  </button>
+                  <button class="wx-cell" type="button" data-nav="listen">
+                    <span class="wx-cell__label">一起听</span>
+                    <span class="wx-cell__arrow" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><path d="M8 5.6 12.4 10 8 14.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                  </button>
+                  <button class="wx-cell" type="button" data-nav="settings">
+                    <span class="wx-cell__label">设置</span>
+                    <span class="wx-cell__arrow" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><path d="M8 5.6 12.4 10 8 14.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <nav class="wx-tabbar" aria-label="聊天导航">
@@ -5656,7 +5732,7 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
               <span class="wx-tab__ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.5"/><path d="M15.2 8.8 13.4 13.4 8.8 15.2l1.8-4.6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
               <span class="wx-tab__label">发现</span>
             </button>
-            <button class="wx-tab" type="button" data-nav="me" aria-label="我">
+            <button class="wx-tab" type="button" data-wx-tab="me" aria-current="false" aria-label="我">
               <span class="wx-tab__ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8.4" r="3.4" stroke="currentColor" stroke-width="1.5"/><path d="M5.4 19.4c.8-3.3 3.2-5.1 6.6-5.1s5.8 1.8 6.6 5.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
               <span class="wx-tab__label">我</span>
             </button>
@@ -6174,10 +6250,6 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
         <button class="tab" type="button" data-nav="listen" aria-current="false">
           <span class="tab__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.2" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="12" r="2.4" stroke="currentColor" stroke-width="1.4"/><path d="M6.6 7.8a7.4 7.4 0 0 1 2.4-1.9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".7"/></svg></span>
           <span class="tab__label">一起听</span>
-        </button>
-        <button class="tab" type="button" data-nav="circle" aria-current="false">
-          <span class="tab__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4.2" y="6.4" width="15.6" height="12" rx="2.4" stroke="currentColor" stroke-width="1.4"/><path d="M4.2 15.2l4.2-3.4 3.4 2.8 2.6-2 5 4" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="15.4" cy="9.8" r="1.2" stroke="currentColor" stroke-width="1.2"/></svg></span>
-          <span class="tab__label">朋友圈</span>
         </button>
         <button class="tab" type="button" data-nav="me" aria-current="false">
           <span class="tab__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8.6" r="3.5" stroke="currentColor" stroke-width="1.4"/><path d="M5.6 19.4c.8-3.4 3.2-5.2 6.4-5.2s5.6 1.8 6.4 5.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
@@ -13197,8 +13269,9 @@ const DATA = {
   }
 
   function renderWx() {
+    var titles = { chats: '微信', contacts: '通讯录', me: '我' };
     var title = document.getElementById('wxTitle');
-    if (title) title.textContent = wxTabName === 'chats' ? '微信' : '通讯录';
+    if (title) title.textContent = titles[wxTabName] || '微信';
     $$('.wx-panel').forEach(function (p) {
       p.hidden = p.getAttribute('data-wx-panel') !== wxTabName;
     });
@@ -13206,9 +13279,21 @@ const DATA = {
       var on = t.getAttribute('data-wx-tab') === wxTabName;
       t.classList.toggle('is-on', on);
       t.setAttribute('aria-current', String(on));
+      /* 发现不是面板，是跳出去的入口，别让它被点亮成当前页 */
+      if (!t.hasAttribute('data-wx-tab')) t.classList.remove('is-on');
     });
     renderWxChats();
     renderWxContacts();
+    renderWxMe();
+  }
+
+  function renderWxMe() {
+    var sub2 = document.getElementById('wxMeSub');
+    if (!sub2) return;
+    paintAllAvatars();
+    var c = currentChar();
+    if (!c) { sub2.textContent = '还没选角色'; return; }
+    sub2.textContent = '和' + c.name + ' 在一起第 ' + daysTogether(bondStartDate()) + ' 天';
   }
 
   function wxTab(name) {

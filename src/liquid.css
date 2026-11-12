@@ -861,6 +861,57 @@ html[data-theme="ice"] .tabbar { background: linear-gradient(180deg, rgba(252, 2
 }
 .wx-tab__label { font-size: 10.5px; letter-spacing: .02em; }
 
+.wx-me { background: #fff; }
+.wx-me__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 18px 22px;
+  background: #fff;
+  border-bottom: 1px solid rgba(0, 0, 0, .05);
+}
+.wx-me__ava {
+  width: 62px;
+  height: 62px;
+  border-radius: 6px;
+  flex: none;
+  font-size: 24px;
+}
+.wx-me__info { min-width: 0; }
+.wx-me__name {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 600;
+  color: #111;
+}
+.wx-me__sub {
+  margin: 5px 0 0;
+  font-size: 13px;
+  color: #9a9a9a;
+}
+
+.wx-me__cells { background: #fff; }
+.wx-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 18px;
+  border: 0;
+  border-top: 1px solid rgba(0, 0, 0, .045);
+  background: #fff;
+  font: inherit;
+  font-size: 15.5px;
+  color: #222;
+  cursor: pointer;
+  text-align: left;
+}
+.wx-cell:first-child { border-top: 0; }
+.wx-cell:active { background: #f2f2f2; }
+.wx-cell__arrow { color: #c4c4c4; display: grid; place-items: center; }
+.wx-cell__arrow svg { width: 17px; height: 17px; }
+
 /* ---------- 朋友圈点赞 ---------- */
 /* 微信：互动区第一行是「♡ 名字」，名字蓝色，点赞和评论之间有一条浅分线。 */
 .wx-post__likes {
