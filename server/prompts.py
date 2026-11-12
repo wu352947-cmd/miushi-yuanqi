@@ -61,7 +61,9 @@ def history_budget(
     window = int((model or {}).get("context") or 0) or 32768
     reserve = max(1024, int(sampling.get("max_tokens") or 1200))
     usable = max(1024, window - reserve)
-    ratio_cap = int(usable * 0.6)
+    # 90%：历史最多占窗口的九成，剩下留给系统块（角色卡 / 世界书 / 记忆）
+    # 和输出。再往上，请求会直接因为超长被上游拒掉。
+    ratio_cap = int(usable * 0.9)
     # override 是用户在设置里调的上限，优先于预设里的默认值——
     # 预设编辑界面没有采样参数，那个值实际上改不动，只能当兜底。
     user_cap = int(override or sampling.get("context_budget") or 0) or 32000

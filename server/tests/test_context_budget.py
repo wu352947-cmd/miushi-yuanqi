@@ -24,7 +24,7 @@ def test_override_wins():
 def test_override_capped_by_window():
     """窗口小的时候，用户设得再大也不能把窗口塞满。"""
     budget = prompts.history_budget(_model(4000), _sampling(1200), 128000)
-    assert budget <= int((4000 - 1200) * 0.6)
+    assert budget <= int((4000 - 1200) * 0.9)
     assert budget >= 1024
 
 

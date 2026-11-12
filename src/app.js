@@ -248,7 +248,8 @@
     var budget = Number((state.settings || {}).contextBudget) || 32000;
     if (win > 0) {
       var usable = Math.max(1024, win - 1200);
-      budget = Math.min(budget, Math.floor(usable * 0.6));
+      // 和后端 history_budget 保持一致：窗口的九成
+      budget = Math.min(budget, Math.floor(usable * 0.9));
     }
     return Math.max(1024, budget);
   }
@@ -4725,16 +4726,41 @@
         '<button class="btn btn--primary" type="button" data-a2="digest-save">保存</button>'
     };
   };
-  /* 预算滑轨：拖动只改文字，松手才落库——一边拖一边重绘会跳 */
-  function onBudgetSlide(el) {
-    var k = Number(el.value) || 32;
-    var sub = document.getElementById('ctxBudgetSub');
-    if (sub) {
-      sub.textContent = '历史最多带 ' + fmtTokens(k * 1000) + '，装不下的从最老的开始丢';
+  /* 预算滑轨用对数刻度：4K~1024K 之间，线性刻度下 32K 会挤在最左边。
+     pos 0~100 → 4K~1M：pos=0 是 4K，pos≈37 是 32K，pos=100 是 1024K。 */
+  var BUDGET_MIN_K = 4;
+  var BUDGET_MAX_K = 1024;
+  function budgetPosToK(pos) {
+    var t = Math.max(0, Math.min(100, Number(pos) || 0)) / 100;
+    var k = Math.exp(Math.log(BUDGET_MIN_K) + (Math.log(BUDGET_MAX_K) - Math.log(BUDGET_MIN_K)) * t);
+    // 小数值按 1K 取整，上了 64K 按 4K 取整，免得显示 33.7K 这种数字
+    k = k < 64 ? Math.round(k) : Math.round(k / 4) * 4;
+    return Math.max(BUDGET_MIN_K, Math.min(BUDGET_MAX_K, k));
+  }
+  function budgetKToPos(k) {
+    var v = Math.max(BUDGET_MIN_K, Math.min(BUDGET_MAX_K, Number(k) || 32));
+    var t = (Math.log(v) - Math.log(BUDGET_MIN_K)) / (Math.log(BUDGET_MAX_K) - Math.log(BUDGET_MIN_K));
+    return Math.round(t * 100);
+  }
+  function budgetSubText(k) {
+    var capK = Math.round(contextBudget() / 1000);
+    var head = '历史最多带 ' + fmtTokens(k * 1000);
+    // 设得比窗口还大时，实际生效会被窗口截断——直接说清楚，别让人以为设置没生效
+    if (capK < k) {
+      head += '（实际 ' + fmtTokens(capK * 1000) + '：模型窗口只装得下这些）';
+    } else {
+      head += '，装不下的从最老的开始丢';
     }
+    return head;
+  }
+  /* 拖动只改文字，松手才落库——一边拖一边重绘会跳 */
+  function onBudgetSlide(el) {
+    var k = budgetPosToK(el.value);
+    var sub = document.getElementById('ctxBudgetSub');
+    if (sub) sub.textContent = budgetSubText(k);
   }
   function onBudgetCommit(el) {
-    var k = Number(el.value) || 32;
+    var k = budgetPosToK(el.value);
     state.settings.contextBudget = k * 1000;
     save();
     renderContextBar();
@@ -4785,11 +4811,10 @@
     var cbK = Math.round((Number(state.settings.contextBudget) || 32000) / 1000);
     body += '<div class="list-row list-row--static list-row--stack">' +
       '<span class="row-main"><span class="row-title serif">上下文预算</span>' +
-      '<span class="row-sub" id="ctxBudgetSub">历史最多带 ' + fmtTokens(cbK * 1000) +
-      '，装不下的从最老的开始丢</span></span>' +
-      '<input class="reason-range" id="ctxBudgetRange" type="range" min="4" max="128" step="4" ' +
-      'value="' + cbK + '" aria-label="上下文预算">' +
-      '<div class="reason-scale"><span>4K</span><span>32K</span><span>64K</span><span>128K</span></div></div>';
+      '<span class="row-sub" id="ctxBudgetSub">' + budgetSubText(cbK) + '</span></span>' +
+      '<input class="reason-range" id="ctxBudgetRange" type="range" min="0" max="100" step="1" ' +
+      'value="' + budgetKToPos(cbK) + '" aria-label="上下文预算">' +
+      '<div class="reason-scale"><span>4K</span><span>32K</span><span>128K</span><span>1M</span></div></div>';
     body += '<div class="list-row list-row--static">' +
       '<span class="row-main"><span class="row-title serif">压缩用哪个模型</span>' +
       '<span class="row-sub">' + (cm ? esc(cm.name) : '默认用当前聊天模型') + '</span></span>' +
