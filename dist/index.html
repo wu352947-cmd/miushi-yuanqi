@@ -16645,10 +16645,6 @@ const DATA = {
     if (action === 'backup') return backupNow();
     if (action === 'mic') return toast('语音输入是样稿示意，先替你收好。');
     if (action === 'call') return toast('通话是样稿示意，缪诗在文字里等你。');
-    if (action === 'music-account') { openSheet('musicLogin'); return true; }
-    if (action === 'music-send') { musicSendCode(); return true; }
-    if (action === 'music-login') { musicLogin(); return true; }
-    if (action === 'music-logout') { musicLogout(); return true; }
     if (action === 'play') return setPlaying(!listen.playing);
     if (action === 'home-play') return setPlaying(!listen.playing);
     if (action === 'next') return nextSong(false);
@@ -17725,6 +17721,11 @@ const DATA = {
   function handleA2Click(kind, el) {
     // 先问一遍通用分发：它只认自己那批，不认就返回 false，继续往下走
     if (typeof handleA2Action === 'function' && handleA2Action(kind, el) === true) return;
+    /* 音乐：一起听里的账号条和登录弹层都用 data-a2 */
+    if (kind === 'music-account') { openSheet('musicLogin'); return; }
+    if (kind === 'music-send') { musicSendCode(); return; }
+    if (kind === 'music-login') { musicLogin(); return; }
+    if (kind === 'music-logout') { musicLogout(); return; }
     var id = el.getAttribute('data-id') || '';
     var value = el.getAttribute('data-value') || '';
     if (kind === 'provider-open') {
