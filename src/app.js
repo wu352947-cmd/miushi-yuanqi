@@ -3190,6 +3190,8 @@
         ? PICK_SONGS
         : [{ title: '她还没点过歌', artist: '', dur: 1 }]
     };
+    var noteEl = document.getElementById('listenNote');
+    if (noteEl) noteEl.textContent = noteText();
     if (sheetName === 'musicPicks') openSheet('musicPicks');
   }
   function noteText() {

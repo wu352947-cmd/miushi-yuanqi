@@ -65,6 +65,10 @@ def _best_match(hits: list[dict], title: str, artist: str) -> dict | None:
             sc += 2
         elif tn and tn in hn:
             sc += 1
+        # 名字里带 Cover / 翻唱 / 伴奏 的，扣一分——原唱优先
+        low = str(h.get("name") or "").lower()
+        if "cover" in low or "翻唱" in low or "伴奏" in low:
+            sc -= 1
         if sc > score:
             best, score = h, sc
     return best if score >= 1 else None
