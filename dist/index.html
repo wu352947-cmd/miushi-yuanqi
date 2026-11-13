@@ -5479,6 +5479,21 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
 .wx-actions { margin: 18px 0 4px; text-align: center; }
 .wx-actions button { padding: 8px 18px; border: 0; border-radius: 6px; background: #f2f2f2; color: #576b95; font-size: 13.5px; cursor: pointer; }
 
+/* ---------- 搜索歌曲 ---------- */
+.music-search { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.music-search .field { flex: 1; min-width: 0; }
+.music-search .btn { flex: none; padding: 0 14px; }
+.search-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; }
+.search-row + .search-row { border-top: 1px solid var(--divider); }
+.search-row__no { flex: none; width: 15px; font-family: var(--sans); font-size: 10px; color: var(--text-3); font-variant-numeric: tabular-nums; text-align: right; }
+.search-row__main { flex: 1; min-width: 0; }
+.search-row__title { display: block; font-family: var(--serif); font-size: 13.5px; letter-spacing: .03em; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-row__artist { display: block; margin-top: 1px; font-family: var(--sans); font-size: 10px; letter-spacing: .03em; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-row__add { flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 50%; border: 1px solid rgba(var(--tint-deep-rgb), .38); background: transparent; color: var(--pink-deep); font-family: var(--sans); font-size: 15px; line-height: 1; }
+.search-row__add.is-added { background: var(--pink); border-color: transparent; color: #fff; font-size: 13px; }
+.card-head__acts { display: inline-flex; align-items: center; gap: 12px; }
+
+
 /* ===== features/chat-history.css ===== */
 /* ===== 第三块：聊天记录管理（对话列表 / 最近的聊天 / 搜索 / 改名 / 人设三层 / 导入导出） ===== */
 
@@ -6174,7 +6189,10 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
             <article class="card listen-playlist">
               <div class="card-head">
                 <span class="label">今日歌单</span>
-                <button class="text-btn" type="button" data-open="playlist">切换歌单</button>
+                <span class="card-head__acts">
+                  <button class="text-btn" type="button" data-a2="music-search">搜索</button>
+                  <button class="text-btn" type="button" data-open="playlist">全部</button>
+                </span>
               </div>
               <p class="playlist-name serif" id="playlistName">雨天与旧信</p>
               <div class="list-rows" id="listenPlaylist"><!-- 由 JS 渲染 --></div>
@@ -13350,7 +13368,7 @@ const DATA = {
       renderListen();
       loadMusicState().then(function () {
         // 歌单不需要登录也能拉；登录只影响音质和会员歌
-        if (!myPlaylistReady) return loadMyPlaylist();
+        if (!myPlaylistReady) return loadMyPlaylist().then(loadMyExtras);
       }).then(function () { renderListen(); });
     }
     if (view === 'circle') renderCircle();
@@ -14096,6 +14114,8 @@ const DATA = {
   var MY_SLOT = 3;
   var myPlaylistLoading = false;
   var myPlaylistReady = false;
+  var MY_EXTRA = [];        // 我自己加进歌单的歌（存在服务器）
+  var musicSearchRows = []; // 上一次搜索的结果
 
   function loadMyPlaylist() {
     if (myPlaylistReady || myPlaylistLoading) return Promise.resolve();
@@ -14751,6 +14771,96 @@ const DATA = {
     }
   }
 
+
+  /* ---------- 搜索与「我加的歌」 ----------
+     网易云歌单只读；我搜到的歌存进 music_songs 表，加载时接在歌单后面。
+     这样换浏览器、换手机都还在。 */
+  function mapExtra(x) {
+    return {
+      title: x.name,
+      artist: x.artist,
+      dur: x.dur,
+      neteaseId: Number(x.song_id),
+      album: x.album,
+      coverUrl: x.cover,
+      note: '我加的',
+      fromSearch: true
+    };
+  }
+  function loadMyExtras() {
+    return serverFetch('/music/songs').then(function (res) {
+      MY_EXTRA = (res.songs || []).map(mapExtra);
+      applyExtras();
+    }).catch(function () { /* 拉不到就不加，不打扰 */ });
+  }
+  function applyExtras() {
+    if (!myPlaylistReady || !DATA.playlists[0]) return;
+    var base = DATA.playlists[0].songs.filter(function (x) { return !x.fromSearch; });
+    DATA.playlists[0].songs = base.concat(MY_EXTRA);
+    if (listen.song >= DATA.playlists[0].songs.length) listen.song = 0;
+    renderListen();
+  }
+  function musicSearchRun() {
+    var input = document.getElementById('musicSearchInput');
+    var q = (input && input.value ? input.value : '').trim();
+    var box = document.getElementById('musicSearchResult');
+    if (!q) {
+      if (box) box.innerHTML = '<p class="sheet-note">先输个歌名或歌手。</p>';
+      return;
+    }
+    if (box) box.innerHTML = '<p class="sheet-note">正在搜…</p>';
+    serverFetch('/music/search?limit=20&q=' + encodeURIComponent(q)).then(function (res) {
+      musicSearchRows = res.songs || [];
+      renderSearchResult();
+    }).catch(function (e) {
+      if (box) box.innerHTML = '<p class="sheet-note">' + esc(e.message || '搜不到，过一会儿再试。') + '</p>';
+    });
+  }
+  function renderSearchResult() {
+    var box = document.getElementById('musicSearchResult');
+    if (!box) return;
+    if (!musicSearchRows.length) {
+      box.innerHTML = '<p class="sheet-note">没搜到。换个关键词试试。</p>';
+      return;
+    }
+    box.innerHTML = musicSearchRows.map(function (song, i) {
+      var added = MY_EXTRA.some(function (x) { return String(x.neteaseId) === String(song.id); });
+      return '<div class="search-row">' +
+        '<span class="search-row__no">' + (i + 1) + '</span>' +
+        coverThumb({ coverUrl: song.cover }, 96) +
+        '<span class="search-row__main">' +
+          '<span class="search-row__title">' + esc(song.name) + '</span>' +
+          '<span class="search-row__artist">' + esc(song.artist) + (song.vip ? ' · 会员' : '') + '</span>' +
+        '</span>' +
+        '<button class="search-row__add' + (added ? ' is-added' : '') + '" type="button"' +
+          ' data-a2="music-add" data-id="' + esc(song.id) + '"' +
+          ' aria-label="' + (added ? '移出歌单' : '加进歌单') + '">' + (added ? '✓' : '+') + '</button>' +
+      '</div>';
+    }).join('');
+  }
+  function musicToggleSong(id) {
+    var song = null;
+    for (var i = 0; i < musicSearchRows.length; i++) {
+      if (String(musicSearchRows[i].id) === String(id)) { song = musicSearchRows[i]; break; }
+    }
+    if (!song) return;
+    var has = MY_EXTRA.some(function (x) { return String(x.neteaseId) === String(id); });
+    var req = has
+      ? serverFetch('/music/songs/' + encodeURIComponent(id), { method: 'DELETE' })
+      : serverFetch('/music/songs', {
+          method: 'POST',
+          body: {
+            id: song.id, name: song.name, artist: song.artist,
+            album: song.album, cover: song.cover, dur: song.dur
+          }
+        });
+    req.then(function (res) {
+      MY_EXTRA = (res.songs || []).map(mapExtra);
+      applyExtras();
+      renderSearchResult();
+      toast(has ? '移出去了。' : '加进歌单了。');
+    }).catch(function () { toast('没成功，再试一次。'); });
+  }
   function playSongId(id) {
     var a = ensureAudio();
     prefetched = { id: '', url: '' };
@@ -15529,6 +15639,19 @@ const DATA = {
     };
   };
 
+  SHEETS.musicSearch = function () {
+    return {
+      title: '搜索歌曲',
+      body: '<div class="music-search">' +
+          '<input class="field" type="search" id="musicSearchInput" placeholder="歌名 / 歌手"' +
+          ' autocomplete="off" enterkeyhint="search">' +
+          '<button class="btn btn--primary" type="button" data-a2="music-search-run">搜索</button>' +
+        '</div>' +
+        '<div id="musicSearchResult"><p class="sheet-note">搜首歌吧，比如「雨天」。</p></div>' +
+        '<p class="sheet-note">点右边的 + 就加进歌单，再点一次移出去。</p>',
+      foot: '<button class="btn" type="button" data-close>完成</button>'
+    };
+  };
   SHEETS.playlist = function () {
     var body = DATA.playlists.map(function (pl, pi) {
       var songs = pl.songs.map(function (s, si) {
@@ -17880,6 +18003,9 @@ const DATA = {
     if (kind === 'music-send') { musicSendCode(); return; }
     if (kind === 'music-login') { musicLogin(); return; }
     if (kind === 'music-logout') { musicLogout(); return; }
+    if (kind === 'music-search') { musicSearchRows = []; openSheet('musicSearch'); return; }
+    if (kind === 'music-search-run') { musicSearchRun(); return; }
+    if (kind === 'music-add') { musicToggleSong(el.getAttribute('data-id') || ''); return; }
     var id = el.getAttribute('data-id') || '';
     var value = el.getAttribute('data-value') || '';
     if (kind === 'provider-open') {

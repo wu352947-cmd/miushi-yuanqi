@@ -298,12 +298,31 @@ def _song_json(s: dict) -> dict:
 
 
 def search(q: str, limit: int = 20) -> list[dict]:
+    """搜歌。返回的每条都能直接播，且带封面。
+
+    注意：/search 只给 picId 不给 picUrl，所以再批量调一次 /song/detail 补封面。
+    补失败不影响搜索本身（只是列表里没有图）。
+    """
     q = (q or "").strip()
     if not q:
         return []
     data = _body(_call("/search", {"keywords": q, "limit": limit, "type": 1}))
     songs = ((data.get("result") or {}).get("songs")) or []
-    return [_song_json(s) for s in songs]
+    out = [_song_json(s) for s in songs]
+    if out and any(not x["cover"] for x in out):
+        ids = [x["id"] for x in out if x["id"] and not x["cover"]]
+        try:
+            detail = _body(_call("/song/detail", {"ids": ",".join(ids)}))
+            covers = {
+                str(s.get("id")): ((s.get("al") or {}).get("picUrl") or "")
+                for s in (detail.get("songs") or [])
+            }
+            for x in out:
+                if not x["cover"]:
+                    x["cover"] = covers.get(x["id"], "")
+        except Exception:
+            pass
+    return out
 
 
 def song_url(conn, song_id: str, level: str = "exhigh") -> dict:
