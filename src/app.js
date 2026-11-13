@@ -1667,8 +1667,11 @@
       loadMusicState().then(function () {
         // 歌单不需要登录也能拉；登录只影响音质和会员歌
         var jobs = [];
-        if (!myPlaylistReady) jobs.push(loadMyPlaylist().then(loadMyExtras));
-        jobs.push(loadPicks());
+        if (!myPlaylistReady) {
+          jobs.push(loadMyPlaylist().then(loadMyExtras).then(loadPicks));
+        } else {
+          jobs.push(loadPicks());
+        }
         return Promise.all(jobs);
       }).then(function () { renderListen(); });
     }
@@ -2453,6 +2456,7 @@
         if (audioEl) { audioEl.pause(); audioEl.removeAttribute("src"); }
         state.listen = { playlist: 0, song: listen.song };
         save();
+        if (RAW_PICKS.length) applyPicks(RAW_PICKS);  // 整体替换会冲掉 [1]，补回来
       }
       renderListen();
     }).catch(function () {
@@ -3181,8 +3185,10 @@
       fromPick: true
     };
   }
+  var RAW_PICKS = [];   // 后端原始列表：主歌单整体替换后要重新挂一次
   function applyPicks(list) {
-    PICK_SONGS = (list || []).map(mapPick);
+    if (list) RAW_PICKS = list;
+    PICK_SONGS = RAW_PICKS.map(mapPick);
     DATA.playlists[PICK_SLOT] = {
       name: '恋缘之音',
       desc: '她点的歌',
