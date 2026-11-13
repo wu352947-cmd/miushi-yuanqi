@@ -157,3 +157,66 @@ def music_cover(u: str = ""):
             part.replace(target)
             return FileResponse(target, media_type="image/jpeg", headers=_COVER_HEADERS)
     return RedirectResponse(raw, status_code=302)
+
+
+# =========================================================================== 音频流代理
+# 手机直连 m801 能下，但前端必须先 await 拿地址再 play()，那一步一过手势就失效了。
+# 同源代理后：点击瞬间同步设 src + play()，并且透传 Range，进度条能拖。
+import time as _time  # noqa: E402
+
+import httpx as _httpx  # noqa: E402
+from fastapi import Request  # noqa: E402
+from fastapi.responses import StreamingResponse  # noqa: E402
+
+_AUDIO_URL_CACHE = {}
+_AUDIO_CLIENT = _httpx.Client(timeout=_httpx.Timeout(20.0, read=120.0), follow_redirects=True)
+
+
+def _audio_url(conn, sid: str) -> str:
+    now = _time.time()
+    hit = _AUDIO_URL_CACHE.get(sid)
+    if hit and hit[1] > now:
+        return hit[0]
+    data = music.song_url(conn, sid)
+    url = str(data.get("url") or "")
+    if not url:
+        raise ApiError("badgateway", "这首暂时拿不到播放地址，可能是版权限制。", status=502)
+    _AUDIO_URL_CACHE[sid] = (url, now + 600)
+    return url
+
+
+@router.get("/audio")
+def music_audio(id: str = "", request: Request = None, conn=Depends(get_conn)):
+    """把网易云音频边收边发地转给浏览器，支持 Range。"""
+    sid = (id or "").strip()
+    if not sid.isdigit():
+        raise ApiError("badrequest", "歌曲 id 不对。")
+    url = _audio_url(conn, sid)
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://music.163.com/"}
+    rng = request.headers.get("range") if request is not None else None
+    if rng:
+        headers["Range"] = rng
+    upstream = _AUDIO_CLIENT.send(_AUDIO_CLIENT.build_request("GET", url, headers=headers), stream=True)
+    if upstream.status_code >= 400:
+        upstream.close()
+        raise ApiError("badgateway", "音源没给数据，稍后再试。", status=502)
+    out = {}
+    for key in ("content-length", "content-range", "accept-ranges", "content-type"):
+        value = upstream.headers.get(key)
+        if value:
+            out[key] = value
+
+    def relay():
+        try:
+            for chunk in upstream.iter_raw():
+                if chunk:
+                    yield chunk
+        finally:
+            upstream.close()
+
+    return StreamingResponse(
+        relay(),
+        status_code=upstream.status_code,
+        headers=out,
+        media_type=upstream.headers.get("content-type") or "audio/mpeg",
+    )
