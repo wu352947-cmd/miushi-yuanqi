@@ -14175,6 +14175,7 @@ const DATA = {
         state.listen = { playlist: 0, song: listen.song };
         save();
         if (RAW_PICKS.length) applyPicks(RAW_PICKS);  // 整体替换会冲掉 [1]，补回来
+        warmUrls(songs.slice(0, 3).map(function (x) { return x.neteaseId; }));
       }
       renderListen();
     }).catch(function () {
@@ -14908,6 +14909,7 @@ const DATA = {
   function applyPicks(list) {
     if (list) RAW_PICKS = list;
     PICK_SONGS = RAW_PICKS.map(mapPick);
+    warmUrls(PICK_SONGS.map(function (x) { return x.neteaseId; }));
     DATA.playlists[PICK_SLOT] = {
       name: '恋缘之音',
       desc: '她点的歌',
@@ -14957,6 +14959,15 @@ const DATA = {
       picking = false;
       openSheet('musicPicks');
       toast(e.message || '她这会儿没挑出来。');
+    });
+  }
+  /* 提前把地址问好（后端会缓存 10 分钟），这样点播放时不用再等网易云 */
+  function warmUrls(ids) {
+    var seen = {};
+    (ids || []).slice(0, 4).forEach(function (id) {
+      if (!id || seen[id]) return;
+      seen[id] = 1;
+      serverFetch('/music/url?id=' + encodeURIComponent(id)).catch(function () {});
     });
   }
   function audioSrcOf(id) {
