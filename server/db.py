@@ -2335,6 +2335,12 @@ def music_pick_add(conn, song: dict, chat_id: str, character_id: str = "") -> di
     return dict(row) if row else {}
 
 
+def music_pick_remove(conn, pick_id: int) -> bool:
+    """移出她点的一首歌。"""
+    cur = conn.execute("DELETE FROM music_picks WHERE id = ?", (int(pick_id),))
+    return bool(cur.rowcount)
+
+
 def music_pick_clear(conn, chat_id: str = "") -> int:
     if chat_id:
         cur = conn.execute("DELETE FROM music_picks WHERE chat_id = ?", (chat_id,))

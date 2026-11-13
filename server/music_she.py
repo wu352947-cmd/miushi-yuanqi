@@ -116,7 +116,7 @@ async def pick_songs(chat_id: str, count: int = 2) -> dict[str, Any]:
     picks = parse_picks(result.get("text") or "")
     if not picks:
         return {"ok": False, "message": "她没挑出合适的歌，再试一次。"}
-    added = 0
+    matched = []
     with db.get_db() as conn:
         for p in picks[: max(1, int(count))]:
             try:
@@ -128,23 +128,26 @@ async def pick_songs(chat_id: str, count: int = 2) -> dict[str, Any]:
             if not hit:
                 LOG.info("恋缘之音：搜不到 %s - %s，跳过", p["title"], p["artist"])
                 continue
-            db.music_pick_add(
-                conn,
-                {
-                    "song_id": hit.get("id") or "",
-                    "name": hit.get("name") or p["title"],
-                    "artist": hit.get("artist") or p["artist"],
-                    "album": hit.get("album") or "",
-                    "cover": hit.get("cover") or "",
-                    "dur": hit.get("dur") or 0,
-                    "why": p["why"],
-                },
-                chat_id,
-                character_id,
-            )
-            added += 1
-        rows = db.music_pick_list(conn, chat_id)
-    if not added:
+            song_id = str(hit.get("id") or "")
+            if not song_id or any(m["song_id"] == song_id for m in matched):
+                continue          # 同一批里重了的直接丢掉
+            matched.append({
+                "song_id": song_id,
+                "name": hit.get("name") or p["title"],
+                "artist": hit.get("artist") or p["artist"],
+                "album": hit.get("album") or "",
+                "cover": hit.get("cover") or "",
+                "dur": hit.get("dur") or 0,
+                "why": p["why"],
+            })
+        rows = []
+        if matched:
+            # 「让她点歌」= 换掉上一批，不是往上叠（以前越点越多、还会重复）
+            db.music_pick_clear(conn, chat_id)
+            for item in matched:
+                db.music_pick_add(conn, item, chat_id, character_id)
+            rows = db.music_pick_list(conn, chat_id)
+    if not matched:
         return {"ok": False, "message": "挑的歌都搜不到，再试一次。"}
-    LOG.info("恋缘之音：为 %s 挑了 %d 首", chat_id, added)
-    return {"ok": True, "added": added, "picks": rows}
+    LOG.info("恋缘之音：为 %s 挑了 %d 首", chat_id, len(matched))
+    return {"ok": True, "added": len(matched), "picks": rows}

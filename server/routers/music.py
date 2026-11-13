@@ -94,6 +94,12 @@ async def music_picks_generate(payload: dict = Body(default={})) -> dict:
     return await music_she.pick_songs(str(payload.get("chat_id") or ""))
 
 
+@router.delete("/picks/{pick_id}")
+def music_pick_delete(pick_id: int, conn=Depends(get_conn)) -> dict:
+    db.music_pick_remove(conn, pick_id)
+    return {"ok": True}
+
+
 @router.post("/picks/clear")
 def music_picks_clear(payload: dict = Body(default={}), conn=Depends(get_conn)) -> dict:
     chat_id = str(payload.get("chat_id") or "")

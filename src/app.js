@@ -3184,6 +3184,7 @@
       album: x.album,
       coverUrl: x.cover,
       note: x.why || '',
+      pickId: x.id,
       fromPick: true
     };
   }
@@ -4050,6 +4051,8 @@
             (current ? '<span class="song-row__playing" aria-hidden="true"><i></i><i></i><i></i></span>' : '') +
             '<span class="song-row__dur">' + formatDur(song.dur) + '</span>' +
           '</button>' +
+          '<button class="pick-row__del" type="button" aria-label="移出" title="移出"' +
+          ' data-a2="music-pick-del" data-id="' + esc(String(song.pickId || '')) + '">×</button>' +
           (song.note ? '<p class="pick-row__why">' + esc(song.note) + '</p>' : '') +
         '</div>';
       }).join('');
@@ -6431,6 +6434,14 @@
     if (kind === 'music-add') { musicToggleSong(el.getAttribute('data-id') || ''); return; }
     if (kind === 'music-picks') { openSheet('musicPicks'); return; }
     if (kind === 'music-pick-new') { pickForMe(); return; }
+    if (kind === 'music-pick-del') {
+      var pid = el.getAttribute('data-id') || '';
+      if (!pid) return;
+      serverFetch('/music/picks/' + encodeURIComponent(pid), { method: 'DELETE' })
+        .then(function () { loadPicks(); })
+        .catch(function (e) { toast(e.message || '没删掉，再试一次。'); });
+      return;
+    }
     if (kind === 'music-play-pick') {
       selectSong(PICK_SLOT, Number(el.getAttribute('data-idx') || 0));
       closeSheet();
