@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - 兜底
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 # --------------------------------------------------------------------------- 路径
@@ -437,6 +437,18 @@ SCHEMA: list[str] = [
       nickname TEXT NOT NULL DEFAULT '',
       avatar TEXT NOT NULL DEFAULT '',
       updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS music_songs (
+      song_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL DEFAULT '',
+      artist TEXT NOT NULL DEFAULT '',
+      album TEXT NOT NULL DEFAULT '',
+      cover TEXT NOT NULL DEFAULT '',
+      dur REAL NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'search',
+      added_at TEXT NOT NULL
     )
     """,
 
@@ -2228,3 +2240,46 @@ def upsert_npc(
 def delete_npc(conn, npc_id: str) -> bool:
     cur = conn.execute("DELETE FROM circle_npcs WHERE id = ?", (npc_id,))
     return cur.rowcount > 0
+
+# --------------------------------------------------------------------------- 我加的歌
+def music_song_list(conn) -> list[dict]:
+    """我加进歌单的歌，按加入顺序。"""
+    rows = conn.execute(
+        "SELECT song_id, name, artist, album, cover, dur, source, added_at"
+        " FROM music_songs ORDER BY rowid ASC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def music_song_add(conn, payload: dict) -> dict:
+    """加一首。重复加不会产生第二条。"""
+    song_id = str(payload.get("id") or "").strip()
+    name = str(payload.get("name") or "").strip()
+    if not song_id or not name:
+        return {"added": False, "songs": music_song_list(conn)}
+    try:
+        dur = float(payload.get("dur") or 0)
+    except (TypeError, ValueError):
+        dur = 0.0
+    conn.execute(
+        "INSERT INTO music_songs (song_id, name, artist, album, cover, dur, source, added_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        " ON CONFLICT(song_id) DO NOTHING",
+        (
+            song_id,
+            name,
+            str(payload.get("artist") or ""),
+            str(payload.get("album") or ""),
+            str(payload.get("cover") or ""),
+            dur,
+            str(payload.get("source") or "search"),
+            now_iso(),
+        ),
+    )
+    return {"added": True, "songs": music_song_list(conn)}
+
+
+def music_song_remove(conn, song_id: str) -> dict:
+    conn.execute("DELETE FROM music_songs WHERE song_id = ?", (str(song_id),))
+    return {"removed": True, "songs": music_song_list(conn)}
+

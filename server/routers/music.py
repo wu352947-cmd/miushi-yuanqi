@@ -57,3 +57,19 @@ def music_playlists(conn=Depends(get_conn)) -> dict:
 @router.get("/playlist/{playlist_id}")
 def music_playlist(playlist_id: str, conn=Depends(get_conn)) -> dict:
     return {"ok": True, "songs": music.playlist_tracks(conn, playlist_id)}
+
+
+@router.get("/songs")
+def music_songs(conn=Depends(get_conn)) -> dict:
+    """我加进歌单的歌。"""
+    return {"ok": True, "songs": db.music_song_list(conn)}
+
+
+@router.post("/songs")
+def music_song_add(payload: dict = Body(default={}), conn=Depends(get_conn)) -> dict:
+    return {"ok": True, **db.music_song_add(conn, payload)}
+
+
+@router.delete("/songs/{song_id}")
+def music_song_remove(song_id: str, conn=Depends(get_conn)) -> dict:
+    return {"ok": True, **db.music_song_remove(conn, song_id)}
