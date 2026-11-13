@@ -8762,16 +8762,17 @@ const DATA = {
     return m[1] + '://' + host + '.music.126.net/' + String(url).slice(m[0].length);
   }
 
-  /* 封面地址：内联样稿优先用 data URI；正常版由手机直连网易云，失败再换 p1–p4 */
+  /* 封面地址：内联样稿优先用 data URI；正常版走本机缓存代理 /api/music/cover。
+     以前是手机直连 p1~p4.music.126.net，实测 200 张要 4 秒以上、大图经常超时裂掉；
+     现在由 VPS 拉一次存盘，之后再请求是毫秒级，也不用再轮换域名。 */
   function d2CoverSongUrl(song, size, attempt) {
     if (!song || !song.coverUrl) return '';
+    var raw = String(song.coverUrl);
+    if (raw.indexOf('data:') === 0) return raw;
     var inline = INLINE_COVER_MAP && INLINE_COVER_MAP[song.coverUrl];
     if (inline) return inline;
     var px = size || 300;
-    var url = song.coverUrl + '?param=' + px + 'y' + px;
-    if (attempt === undefined || attempt === null || attempt <= 0) return url;
-    var swapped = d2CoverSwapHost(url, attempt - 1);
-    return swapped || url;
+    return '/api/music/cover?u=' + encodeURIComponent(raw + '?param=' + px + 'y' + px);
   }
 
   /* 页面内 <img onerror> 统一走这里：p1→p2→p3→p4 轮流试，全失败才退回素面唱片 */

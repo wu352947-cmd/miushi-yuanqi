@@ -3241,16 +3241,20 @@
       toast(e.message || '她这会儿没挑出来。');
     });
   }
+  function audioSrcOf(id) {
+    /* 同源流式代理：不用先请求地址，src 能同步设好，play() 就还在用户手势里。
+       以前是先 await /music/url 再 play()，手势一过就被浏览器拒掉，
+       表现就是点多少次都弹「再点一次播放」。 */
+    return '/api/music/audio?id=' + encodeURIComponent(String(id));
+  }
   function playSongId(id) {
     var a = ensureAudio();
     prefetched = { id: '', url: '' };
-    return serverFetch('/music/url?id=' + encodeURIComponent(id)).then(function (res) {
-      a.src = res.url;
-      playingSongId = String(id);
-      listen.progress = 0;
-      var p = a.play();
-      return p && p.then ? p : Promise.resolve();
-    });
+    a.src = audioSrcOf(id);
+    playingSongId = String(id);
+    listen.progress = 0;
+    var p = a.play();
+    return p && p.then ? p : Promise.resolve();
   }
 
   /* 预先换好地址，但**不**往 audio 上挂 —— 挂上去可能被别的地方覆盖。
@@ -3281,21 +3285,14 @@
         toast('这首还没有音源。');
         return;
       }
-      if (prefetched.id === id && prefetched.url) {
-        // 同步：赋值 + play 都在点击的调用栈里
-        a.src = prefetched.url;
-        playingSongId = id;
-        var p = a.play();
-        if (p && p.catch) p.catch(function () { toast('再点一次播放。'); });
-      } else {
-        playSongId(id).then(function () {
-          updatePlayUi();
-        }).catch(function (err) {
-          listen.playing = false;
-          updatePlayUi();
-          toast(err.message || '放不出来。');
-        });
-      }
+      // 同源代理，src 在这里同步设好，play() 仍在点击的手势里
+      a.src = audioSrcOf(id);
+      playingSongId = id;
+      listen.progress = 0;
+      var p = a.play();
+      if (p && p.catch) p.catch(function (e) {
+        toast('放不出来：' + (e && e.name ? e.name : '未知原因'));
+      });
     } else {
       a.pause();
     }
