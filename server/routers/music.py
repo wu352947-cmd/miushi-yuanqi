@@ -46,7 +46,12 @@ def music_search(q: str = "", limit: int = 20) -> dict:
 
 @router.get("/url")
 def music_url(id: str = "", level: str = "exhigh", conn=Depends(get_conn)) -> dict:
-    return {"ok": True, **music.song_url(conn, id, level)}
+    out = music.song_url(conn, id, level)
+    url = str(out.get("url") or "")
+    if url and str(id).strip().isdigit():
+        # 和 /audio 共用缓存：前端预取过之后，点播放就不用再问网易云
+        _AUDIO_URL_CACHE[str(id).strip()] = (url, _time.time() + 600)
+    return {"ok": True, **out}
 
 
 @router.get("/playlists")
