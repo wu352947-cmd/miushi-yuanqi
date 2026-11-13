@@ -2468,9 +2468,11 @@
      由手机直接从网易云图片服务器加载；失败时退回主题同色素面唱片。 */
   function coverUrl(song, size) {
     if (!song || !song.coverUrl) return '';
-    if (typeof d2CoverSongUrl === 'function') return d2CoverSongUrl(song, size, 0);
+    var raw = String(song.coverUrl);
+    if (raw.indexOf('data:') === 0) return raw;
     var px = size || 300;
-    return song.coverUrl + '?param=' + px + 'y' + px;
+    // 走本机代理：VPS 拉一次存盘，手机只连自己的域名（直连网易云要 2~9 秒）
+    return '/api/music/cover?u=' + encodeURIComponent(raw + '?param=' + px + 'y' + px);
   }
   function setCoverImg(el, song, size) {
     if (typeof d2CoverSetImg === 'function') { d2CoverSetImg(el, song, size); return; }
@@ -2483,12 +2485,9 @@
   function coverThumb(song, size) {
     var url = coverUrl(song, size || 120);
     if (!url) return '<span class="song-row__cover" aria-hidden="true"></span>';
-    /* 列表封面：失败时按 p1 → p2 → p3 → p4 换域名重试，四个都失败才露出素色小方块 */
-    var base = song && song.coverUrl ? song.coverUrl + '?param=' + (size || 120) + 'y' + (size || 120) : '';
-    if (url.indexOf('data:') === 0) base = '';
-    return '<span class="song-row__cover" aria-hidden="true"><img src="' + url + '" alt="" decoding="async" referrerpolicy="no-referrer"' +
-      ' data-cover-base="' + esc(base) + '" data-cover-attempt="0"' +
-      ' onerror="window.d2CoverError&&window.d2CoverError(this)"></span>';
+    // 200 首一次渲染：lazy 让不在屏内的先不请求，其余走本机缓存代理
+    return '<span class="song-row__cover" aria-hidden="true"><img src="' + url +
+      '" alt="" loading="lazy" decoding="async"></span>';
   }
 
   /* ---------- 朋友圈（照微信来） ----------
@@ -2961,7 +2960,9 @@
     $('#trackArtist').textContent = song.artist;
     $('#listenNote').textContent = noteText();
     var pn = $('#playlistName');
-    if (pn) pn.textContent = currentPlaylist().name;
+    /* 下面那块列表永远渲染 DATA.playlists[0]（renderInlinePlaylist 写死 0），
+       标题必须跟着它，否则点过「恋缘之音」后标题会变成她点的歌、列表还是主歌单。 */
+    if (pn) pn.textContent = (DATA.playlists[0] || PENDING_PLAYLIST).name;
     var trackEl = $('#homeTrack');
     if (trackEl) trackEl.textContent = song.title;
     var artistEl = $('#homeArtist');
