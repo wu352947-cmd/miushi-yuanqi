@@ -3193,11 +3193,17 @@
     if (sheetName === 'musicPicks') openSheet('musicPicks');
   }
   function noteText() {
+    // 有的 note 自带「她说：」，有的没有，别重复加
+    function quote(t) {
+      var v = String(t || '');
+      if (!v) return '';
+      return v.indexOf('她说') === 0 ? v : '她说：' + v;
+    }
     var cur = currentSong();
-    if (cur && cur.note) return '她说：' + cur.note;
+    if (cur && cur.note) return quote(cur.note);
     if (PICK_SONGS.length) {
       var last = PICK_SONGS[PICK_SONGS.length - 1];
-      if (last.note) return '她说：' + last.note;
+      if (last.note) return quote(last.note);
       return '她给你点了《' + last.title + '》。';
     }
     return '点「点歌」，让她按你们刚才聊的挑几首。';
