@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - 兜底
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 
 # --------------------------------------------------------------------------- 路径
@@ -449,6 +449,21 @@ SCHEMA: list[str] = [
       dur REAL NOT NULL DEFAULT 0,
       source TEXT NOT NULL DEFAULT 'search',
       added_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS music_picks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      song_id TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL DEFAULT '',
+      artist TEXT NOT NULL DEFAULT '',
+      album TEXT NOT NULL DEFAULT '',
+      cover TEXT NOT NULL DEFAULT '',
+      dur REAL NOT NULL DEFAULT 0,
+      why TEXT NOT NULL DEFAULT '',
+      chat_id TEXT NOT NULL DEFAULT '',
+      character_id TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
     )
     """,
 
@@ -2282,4 +2297,48 @@ def music_song_add(conn, payload: dict) -> dict:
 def music_song_remove(conn, song_id: str) -> dict:
     conn.execute("DELETE FROM music_songs WHERE song_id = ?", (str(song_id),))
     return {"removed": True, "songs": music_song_list(conn)}
+
+# --------------------------------------------------------------------------- 恋缘之音
+def music_pick_list(conn, chat_id: str = "", limit: int = 30) -> list[dict]:
+    """她点的歌，旧的在前（按挑歌顺序播放）。"""
+    if chat_id:
+        rows = conn.execute(
+            "SELECT * FROM music_picks WHERE chat_id = ? ORDER BY id DESC LIMIT ?",
+            (chat_id, int(limit)),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM music_picks ORDER BY id DESC LIMIT ?", (int(limit),)
+        ).fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
+def music_pick_add(conn, song: dict, chat_id: str, character_id: str = "") -> dict:
+    cur = conn.execute(
+        "INSERT INTO music_picks"
+        " (song_id, name, artist, album, cover, dur, why, chat_id, character_id, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            str(song.get("song_id") or ""),
+            str(song.get("name") or ""),
+            str(song.get("artist") or ""),
+            str(song.get("album") or ""),
+            str(song.get("cover") or ""),
+            float(song.get("dur") or 0),
+            str(song.get("why") or ""),
+            chat_id or "",
+            character_id or "",
+            now_iso(),
+        ),
+    )
+    row = conn.execute("SELECT * FROM music_picks WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return dict(row) if row else {}
+
+
+def music_pick_clear(conn, chat_id: str = "") -> int:
+    if chat_id:
+        cur = conn.execute("DELETE FROM music_picks WHERE chat_id = ?", (chat_id,))
+    else:
+        cur = conn.execute("DELETE FROM music_picks")
+    return cur.rowcount or 0
 

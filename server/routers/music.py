@@ -73,3 +73,24 @@ def music_song_add(payload: dict = Body(default={}), conn=Depends(get_conn)) -> 
 @router.delete("/songs/{song_id}")
 def music_song_remove(song_id: str, conn=Depends(get_conn)) -> dict:
     return {"ok": True, **db.music_song_remove(conn, song_id)}
+
+
+@router.get("/picks")
+def music_picks(chat_id: str = "", conn=Depends(get_conn)) -> dict:
+    """她点的歌（恋缘之音）。"""
+    return {"ok": True, "picks": db.music_pick_list(conn, chat_id)}
+
+
+@router.post("/picks/generate")
+async def music_picks_generate(payload: dict = Body(default={})) -> dict:
+    """让她按当前剧情挑歌。会调模型 + 搜索，几秒到几十秒。"""
+    from .. import music_she
+
+    return await music_she.pick_songs(str(payload.get("chat_id") or ""))
+
+
+@router.post("/picks/clear")
+def music_picks_clear(payload: dict = Body(default={}), conn=Depends(get_conn)) -> dict:
+    chat_id = str(payload.get("chat_id") or "")
+    db.music_pick_clear(conn, chat_id)
+    return {"ok": True, "picks": db.music_pick_list(conn, chat_id)}

@@ -3539,3 +3539,13 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
 .search-row__add.is-added { background: var(--pink); border-color: transparent; color: #fff; font-size: 13px; }
 .card-head__acts { display: inline-flex; align-items: center; gap: 12px; }
 
+/* ---------- 恋缘之音 ---------- */
+.together-text .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pick-open { display: block; width: 100%; padding: 0; text-align: left; background: none; border: 0; }
+.pick-open .together-note { display: block; margin: 2px 0 0; }
+.pick-row { padding: 2px 0; }
+.pick-row + .pick-row { border-top: 1px solid var(--divider); }
+.pick-row__hit { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 0 4px; text-align: left; background: none; border: 0; }
+.pick-row__why { margin: 0 0 8px 25px; font-family: var(--serif); font-size: 11.5px; line-height: 1.5; color: var(--text-3); }
+.pick-row.is-current .song-row__title, .pick-row.is-current .song-row__no { color: var(--pink-deep); }
+

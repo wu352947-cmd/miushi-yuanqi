@@ -1666,7 +1666,10 @@
       renderListen();
       loadMusicState().then(function () {
         // 歌单不需要登录也能拉；登录只影响音质和会员歌
-        if (!myPlaylistReady) return loadMyPlaylist().then(loadMyExtras);
+        var jobs = [];
+        if (!myPlaylistReady) jobs.push(loadMyPlaylist().then(loadMyExtras));
+        jobs.push(loadPicks());
+        return Promise.all(jobs);
       }).then(function () { renderListen(); });
     }
     if (view === 'circle') renderCircle();
@@ -2414,6 +2417,9 @@
   var myPlaylistReady = false;
   var MY_EXTRA = [];        // 我自己加进歌单的歌（存在服务器）
   var musicSearchRows = []; // 上一次搜索的结果
+  var PICK_SLOT = 1;        // DATA.playlists[1] 是「恋缘之音」
+  var PICK_SONGS = [];      // 她点的歌
+  var picking = false;      // 正在让她挑
 
   function loadMyPlaylist() {
     if (myPlaylistReady || myPlaylistLoading) return Promise.resolve();
@@ -2949,7 +2955,7 @@
     if (!song) return;
     $('#trackTitle').textContent = song.title;
     $('#trackArtist').textContent = song.artist;
-    $('#listenNote').textContent = song.note || '';
+    $('#listenNote').textContent = noteText();
     var pn = $('#playlistName');
     if (pn) pn.textContent = currentPlaylist().name;
     var trackEl = $('#homeTrack');
@@ -2969,10 +2975,10 @@
   function renderInlinePlaylist() {
     var box = $('#listenPlaylist');
     if (!box) return;
-    var pl = currentPlaylist();
+    var pl = DATA.playlists[0] || PENDING_PLAYLIST;
     box.innerHTML = pl.songs.map(function (s, si) {
-      var current = si === listen.song;
-      return '<button class="song-row' + (current ? ' is-current' : '') + '" type="button" data-song="' + listen.playlist + ':' + si + '"' + (current ? ' aria-current="true"' : '') + '>' +
+      var current = listen.playlist === 0 && si === listen.song;
+      return '<button class="song-row' + (current ? ' is-current' : '') + '" type="button" data-song="0:' + si + '"' + (current ? ' aria-current="true"' : '') + '>' +
         '<span class="song-row__no">' + (si + 1) + '</span>' +
         coverThumb(s, 120) +
         '<span class="song-row__main"><span class="song-row__title">' + esc(s.title) + '</span><span class="song-row__artist">' + esc(s.artist) + '</span></span>' +
@@ -3158,6 +3164,67 @@
       renderSearchResult();
       toast(has ? '移出去了。' : '加进歌单了。');
     }).catch(function () { toast('没成功，再试一次。'); });
+  }
+
+  /* ---------- 恋缘之音：她按当前剧情点的歌 ----------
+     她读的是「刚刚聊了什么、心里在想什么」，不是「剧情里提过哪首歌」。
+     搜不到的歌在后端就被丢掉了，所以这里拿到的一定能播（会员歌要登录）。 */
+  function mapPick(x) {
+    return {
+      title: x.name,
+      artist: x.artist,
+      dur: x.dur,
+      neteaseId: Number(x.song_id),
+      album: x.album,
+      coverUrl: x.cover,
+      note: x.why || '',
+      fromPick: true
+    };
+  }
+  function applyPicks(list) {
+    PICK_SONGS = (list || []).map(mapPick);
+    DATA.playlists[PICK_SLOT] = {
+      name: '恋缘之音',
+      desc: '她点的歌',
+      songs: PICK_SONGS.length
+        ? PICK_SONGS
+        : [{ title: '她还没点过歌', artist: '', dur: 1 }]
+    };
+    if (sheetName === 'musicPicks') openSheet('musicPicks');
+  }
+  function noteText() {
+    var cur = currentSong();
+    if (cur && cur.note) return '她说：' + cur.note;
+    if (PICK_SONGS.length) {
+      var last = PICK_SONGS[PICK_SONGS.length - 1];
+      if (last.note) return '她说：' + last.note;
+      return '她给你点了《' + last.title + '》。';
+    }
+    return '点「点歌」，让她按你们刚才聊的挑几首。';
+  }
+  function loadPicks() {
+    var chatId = currentChatId();
+    if (!chatId) { applyPicks([]); return Promise.resolve(); }
+    return serverFetch('/music/picks?chat_id=' + encodeURIComponent(chatId)).then(function (res) {
+      applyPicks(res.picks || []);
+    }).catch(function () { applyPicks([]); });
+  }
+  function pickForMe() {
+    var chatId = currentChatId();
+    if (!chatId) { toast('先有一段对话。'); return; }
+    if (picking) { toast('她还在挑，等一下。'); return; }
+    picking = true;
+    if (sheetName === 'musicPicks') openSheet('musicPicks');
+    serverFetch('/music/picks/generate', { method: 'POST', body: { chat_id: chatId } }).then(function (res) {
+      picking = false;
+      applyPicks(res.picks || []);
+      openSheet('musicPicks');
+      toast('她挑了 ' + (res.added || 0) + ' 首。');
+    }).catch(function (e) {
+      picking = false;
+      openSheet('musicPicks');
+      toast(e.message || '她这会儿没挑出来。');
+    });
   }
   function playSongId(id) {
     var a = ensureAudio();
@@ -3937,6 +4004,41 @@
     };
   };
 
+  SHEETS.musicPicks = function () {
+    var songs = PICK_SONGS;
+    var head = picking
+      ? '<p class="sheet-note">她正在听你们刚才说的话…</p>'
+      : '<p class="sheet-note">这些是她按你们刚才聊的挑的，点一首就放。</p>';
+    var body = '';
+    if (!songs.length) {
+      body = '<p class="sheet-note">她还一首都没给你点过。</p>';
+    } else {
+      body = songs.slice().reverse().map(function (song, idx) {
+        var i = songs.length - 1 - idx;
+        var current = listen.playlist === PICK_SLOT && listen.song === i;
+        return '<div class="pick-row' + (current ? ' is-current' : '') + '">' +
+          '<button class="pick-row__hit" type="button" data-a2="music-play-pick" data-idx="' + i + '">' +
+            '<span class="song-row__no">' + (i + 1) + '</span>' +
+            coverThumb(song, 120) +
+            '<span class="song-row__main">' +
+              '<span class="song-row__title">' + esc(song.title) + '</span>' +
+              '<span class="song-row__artist">' + esc(song.artist) + '</span>' +
+            '</span>' +
+            (current ? '<span class="song-row__playing" aria-hidden="true"><i></i><i></i><i></i></span>' : '') +
+            '<span class="song-row__dur">' + formatDur(song.dur) + '</span>' +
+          '</button>' +
+          (song.note ? '<p class="pick-row__why">' + esc(song.note) + '</p>' : '') +
+        '</div>';
+      }).join('');
+    }
+    return {
+      title: '恋缘之音',
+      body: head + body,
+      foot: '<button class="btn" type="button" data-close>关掉</button>' +
+        '<button class="btn btn--primary" type="button" data-a2="music-pick-new"' +
+        (picking ? ' disabled' : '') + '>' + (picking ? '正在挑…' : '让她点歌') + '</button>'
+    };
+  };
   SHEETS.musicSearch = function () {
     return {
       title: '搜索歌曲',
@@ -3951,7 +4053,7 @@
     };
   };
   SHEETS.playlist = function () {
-    var body = DATA.playlists.map(function (pl, pi) {
+    var body = DATA.playlists.slice(0, 1).map(function (pl, pi) {
       var songs = pl.songs.map(function (s, si) {
         var current = pi === listen.playlist && si === listen.song;
         return '<button class="song-row' + (current ? ' is-current' : '') + '" type="button" data-song="' + pi + ':' + si + '"' + (current ? ' aria-current="true"' : '') + '>' +
@@ -6304,6 +6406,13 @@
     if (kind === 'music-search') { musicSearchRows = []; openSheet('musicSearch'); return; }
     if (kind === 'music-search-run') { musicSearchRun(); return; }
     if (kind === 'music-add') { musicToggleSong(el.getAttribute('data-id') || ''); return; }
+    if (kind === 'music-picks') { openSheet('musicPicks'); return; }
+    if (kind === 'music-pick-new') { pickForMe(); return; }
+    if (kind === 'music-play-pick') {
+      selectSong(PICK_SLOT, Number(el.getAttribute('data-idx') || 0));
+      closeSheet();
+      return;
+    }
     var id = el.getAttribute('data-id') || '';
     var value = el.getAttribute('data-value') || '';
     if (kind === 'provider-open') {
