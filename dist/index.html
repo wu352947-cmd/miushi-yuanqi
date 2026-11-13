@@ -5497,9 +5497,11 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
 .together-text .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .pick-open { display: block; width: 100%; padding: 0; text-align: left; background: none; border: 0; }
 .pick-open .together-note { display: block; margin: 2px 0 0; }
-.pick-row { padding: 2px 0; }
+.pick-row { position: relative; padding: 2px 0; }
 .pick-row + .pick-row { border-top: 1px solid var(--divider); }
-.pick-row__hit { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 0 4px; text-align: left; background: none; border: 0; }
+.pick-row__hit { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 32px 4px 0; text-align: left; background: none; border: 0; }
+.pick-row__del { position: absolute; top: 8px; right: -6px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 17px; line-height: 1; color: var(--text-3); background: none; border: 0; border-radius: 50%; -webkit-tap-highlight-color: transparent; }
+.pick-row__del:active { color: var(--pink-deep); background: rgba(0, 0, 0, 0.04); }
 .pick-row__why { margin: 0 0 8px 25px; font-family: var(--serif); font-size: 11.5px; line-height: 1.5; color: var(--text-3); }
 .pick-row.is-current .song-row__title, .pick-row.is-current .song-row__no { color: var(--pink-deep); }
 
@@ -14902,6 +14904,7 @@ const DATA = {
       album: x.album,
       coverUrl: x.cover,
       note: x.why || '',
+      pickId: x.id,
       fromPick: true
     };
   }
@@ -15768,6 +15771,8 @@ const DATA = {
             (current ? '<span class="song-row__playing" aria-hidden="true"><i></i><i></i><i></i></span>' : '') +
             '<span class="song-row__dur">' + formatDur(song.dur) + '</span>' +
           '</button>' +
+          '<button class="pick-row__del" type="button" aria-label="移出" title="移出"' +
+          ' data-a2="music-pick-del" data-id="' + esc(String(song.pickId || '')) + '">×</button>' +
           (song.note ? '<p class="pick-row__why">' + esc(song.note) + '</p>' : '') +
         '</div>';
       }).join('');
@@ -18149,6 +18154,14 @@ const DATA = {
     if (kind === 'music-add') { musicToggleSong(el.getAttribute('data-id') || ''); return; }
     if (kind === 'music-picks') { openSheet('musicPicks'); return; }
     if (kind === 'music-pick-new') { pickForMe(); return; }
+    if (kind === 'music-pick-del') {
+      var pid = el.getAttribute('data-id') || '';
+      if (!pid) return;
+      serverFetch('/music/picks/' + encodeURIComponent(pid), { method: 'DELETE' })
+        .then(function () { loadPicks(); })
+        .catch(function (e) { toast(e.message || '没删掉，再试一次。'); });
+      return;
+    }
     if (kind === 'music-play-pick') {
       selectSong(PICK_SLOT, Number(el.getAttribute('data-idx') || 0));
       closeSheet();
