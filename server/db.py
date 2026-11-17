@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - 兜底
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 
 # --------------------------------------------------------------------------- 路径
@@ -467,8 +467,33 @@ SCHEMA: list[str] = [
     )
     """,
 
+    """
+    CREATE TABLE IF NOT EXISTS events (
+      id TEXT PRIMARY KEY,
+      bond_id TEXT NOT NULL DEFAULT '',
+      chat_id TEXT NOT NULL DEFAULT '',
+      day_key TEXT NOT NULL DEFAULT '',
+      seq INTEGER NOT NULL DEFAULT 0,
+      kind TEXT NOT NULL DEFAULT '日常',
+      title TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      importance INTEGER NOT NULL DEFAULT 5,
+      source_message_id INTEGER NOT NULL DEFAULT 0,
+      character_id TEXT NOT NULL DEFAULT '',
+      persona_id TEXT NOT NULL DEFAULT '',
+      manual INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+    """,
+    # 同一轮只抽一次；手动补的事件 source_message_id=0，所以用部分索引避开
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_events_src
+      ON events(chat_id, source_message_id) WHERE source_message_id > 0
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_events_bond_day ON events(bond_id, day_key, seq)",
+    "CREATE INDEX IF NOT EXISTS idx_events_chat ON events(chat_id, day_key)",
 ]
-
 
 def _columns(conn, table: str) -> set[str]:
     try:
@@ -2076,6 +2101,169 @@ def set_post_images(conn, post_id: str, images: list[dict[str, Any]]) -> None:
         "UPDATE posts SET images_json = ? WHERE id = ?",
         (json.dumps(images, ensure_ascii=False), post_id),
     )
+
+
+# --------------------------------------------------------------------------- events
+def event_json(row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "bondId": row["bond_id"] or "",
+        "chatId": row["chat_id"] or "",
+        "day": row["day_key"] or "",
+        "seq": _int(row["seq"], 0),
+        "kind": row["kind"] or "",
+        "title": row["title"] or "",
+        "body": row["body"] or "",
+        "importance": _int(row["importance"], 5),
+        "manual": bool(row["manual"]),
+        "messageId": _int(row["source_message_id"], 0),
+        "createdAt": row["created_at"] or "",
+        "updatedAt": row["updated_at"] or "",
+    }
+
+
+def list_events(
+    conn, bond_id: str = "", chat_id: str = "", limit: int = 50
+) -> list[dict[str, Any]]:
+    """按时间倒序取事件。bond_id 优先，其次 chat_id。"""
+    limit = max(1, min(500, int(limit)))
+    if bond_id:
+        rows = conn.execute(
+            "SELECT * FROM events WHERE bond_id = ? "
+            "ORDER BY day_key DESC, seq DESC, created_at DESC LIMIT ?",
+            (bond_id, limit),
+        ).fetchall()
+    elif chat_id:
+        rows = conn.execute(
+            "SELECT * FROM events WHERE chat_id = ? "
+            "ORDER BY day_key DESC, seq DESC, created_at DESC LIMIT ?",
+            (chat_id, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM events ORDER BY day_key DESC, seq DESC, created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [event_json(r) for r in rows]
+
+
+def recent_events(conn, bond_id: str = "", limit: int = 3) -> list[dict[str, Any]]:
+    return list_events(conn, bond_id=bond_id, limit=limit)
+
+
+def get_event_row(conn, event_id: str):
+    return conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+
+
+def _next_event_seq(conn, chat_id: str, day_key: str) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(MAX(seq), 0) AS s FROM events WHERE chat_id = ? AND day_key = ?",
+        (chat_id, day_key),
+    ).fetchone()
+    return _int(row["s"] if row else 0, 0) + 1
+
+
+def event_day_key(conn, chat_id: str, fallback: str = "") -> str:
+    """沿用这一天最后一个事件的日期；没有就落到 fallback 或今天。
+
+    只是排序用的标签，不注入提示词，所以不违反「不注入墙钟时间」。
+    """
+    row = conn.execute(
+        "SELECT day_key FROM events WHERE chat_id = ? AND day_key <> '' "
+        "ORDER BY created_at DESC LIMIT 1",
+        (chat_id,),
+    ).fetchone()
+    if row and row["day_key"]:
+        return str(row["day_key"])
+    return fallback or today_str()
+
+
+def create_event(
+    conn,
+    *,
+    bond_id: str = "",
+    chat_id: str = "",
+    title: str,
+    body: str = "",
+    kind: str = "日常",
+    importance: int = 5,
+    day_key: str = "",
+    source_message_id: int = 0,
+    character_id: str = "",
+    persona_id: str = "",
+    manual: bool = False,
+    event_id: str = "",
+) -> dict[str, Any] | None:
+    title = (title or "").strip()[:60]
+    if not title:
+        return None
+    if not day_key:
+        day_key = event_day_key(conn, chat_id)
+    seq = _next_event_seq(conn, chat_id, day_key)
+    eid = event_id or new_id("evt")
+    now = now_iso()
+    try:
+        conn.execute(
+            "INSERT INTO events (id, bond_id, chat_id, day_key, seq, kind, title, body, "
+            "importance, source_message_id, character_id, persona_id, manual, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                eid, bond_id, chat_id, day_key, seq, kind, title, (body or "").strip(),
+                max(1, min(10, _int(importance, 5))), int(source_message_id or 0),
+                character_id, persona_id, 1 if manual else 0, now, now,
+            ),
+        )
+    except sqlite3.IntegrityError:
+        # 同一轮已经抽过了，幂等跳过
+        return None
+    row = get_event_row(conn, eid)
+    return event_json(row) if row else None
+
+
+_EVENT_PATCHABLE = {
+    "title": "title",
+    "body": "body",
+    "kind": "kind",
+    "importance": "importance",
+    "day": "day_key",
+}
+
+
+def update_event(conn, event_id: str, patch: dict[str, Any]) -> dict[str, Any] | None:
+    row = get_event_row(conn, event_id)
+    if not row:
+        return None
+    sets: list[str] = []
+    vals: list[Any] = []
+    for key, col in _EVENT_PATCHABLE.items():
+        if key not in patch:
+            continue
+        value = patch[key]
+        if value is None:
+            continue
+        if key == "title":
+            value = str(value).strip()[:60]
+            if not value:
+                continue
+        elif key == "importance":
+            value = max(1, min(10, _int(value, 5)))
+        else:
+            value = str(value)
+        sets.append(col + " = ?")
+        vals.append(value)
+    if not sets:
+        return event_json(row)
+    sets.append("updated_at = ?")
+    vals.append(now_iso())
+    vals.append(event_id)
+    conn.execute("UPDATE events SET " + ", ".join(sets) + " WHERE id = ?", vals)
+    row = get_event_row(conn, event_id)
+    return event_json(row) if row else None
+
+
+def delete_event(conn, event_id: str) -> bool:
+    cur = conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+    return cur.rowcount > 0
 
 
 def list_posts(conn, bond_id: str, limit: int = 50) -> list[dict[str, Any]]:

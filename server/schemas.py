@@ -197,3 +197,25 @@ class PostIn(BaseModel):
 
 class ReplyIn(BaseModel):
     text: str
+
+
+class EventIn(BaseModel):
+    """手动补一条剧情事件。"""
+
+    title: str = ""
+    body: str = ""
+    kind: str = "日常"
+    importance: int = 5
+    day: str = ""
+    bondId: str = ""
+    chatId: str = ""
+    characterId: str = ""
+    personaId: str = ""
+
+
+class EventPatch(BaseModel):
+    title: str | None = None
+    body: str | None = None
+    kind: str | None = None
+    importance: int | None = None
+    day: str | None = None

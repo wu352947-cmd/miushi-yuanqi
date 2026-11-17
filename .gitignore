@@ -44,3 +44,4 @@ dist/*.prev.html
 .coverage
 htmlcov/
 coverage.xml
+*.bak-*
