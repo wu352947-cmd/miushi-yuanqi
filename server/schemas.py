@@ -219,3 +219,10 @@ class EventPatch(BaseModel):
     kind: str | None = None
     importance: int | None = None
     day: str | None = None
+
+
+class CircleMergeIn(BaseModel):
+    """把 fromId 这个圈并进 intoId。"""
+
+    fromId: str = ""
+    intoId: str = ""

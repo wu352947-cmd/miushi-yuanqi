@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - 兜底
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 
 # --------------------------------------------------------------------------- 路径
@@ -493,6 +493,36 @@ SCHEMA: list[str] = [
     """,
     "CREATE INDEX IF NOT EXISTS idx_events_bond_day ON events(bond_id, day_key, seq)",
     "CREATE INDEX IF NOT EXISTS idx_events_chat ON events(chat_id, day_key)",
+    """
+    CREATE TABLE IF NOT EXISTS circles (
+      id TEXT PRIMARY KEY,
+      persona_id TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_circles_persona ON circles(persona_id)",
+    # 新写入的帖子/NPC 自动继承所属 bond 的圈，避免每条写入路径都要记得填
+    """
+    CREATE TRIGGER IF NOT EXISTS trg_posts_circle
+    AFTER INSERT ON posts WHEN NEW.circle_id = ''
+    BEGIN
+      UPDATE posts SET circle_id =
+        COALESCE((SELECT circle_id FROM bonds WHERE id = NEW.bond_id), '')
+      WHERE id = NEW.id;
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS trg_npcs_circle
+    AFTER INSERT ON circle_npcs WHEN NEW.circle_id = ''
+    BEGIN
+      UPDATE circle_npcs SET circle_id =
+        COALESCE((SELECT circle_id FROM bonds WHERE id = NEW.bond_id), '')
+      WHERE id = NEW.id;
+    END
+    """,
 ]
 
 def _columns(conn, table: str) -> set[str]:
@@ -609,6 +639,41 @@ def _migrate(conn, current: int) -> None:
             conn.execute(
                 "ALTER TABLE posts ADD COLUMN images_json TEXT NOT NULL DEFAULT '[]'"
             )
+
+
+    if current < 15:  # MIGRATE_CIRCLES_MARK
+        # v15：世界圈。一条 bond 默认独占一个圈（表现与以前按 bond 隔离完全一样），
+        # 只有用户显式「合并」之后，同圈的角色才能看到彼此的动态与 NPC。
+        for table, col in (("bonds", "circle_id"), ("posts", "circle_id"), ("circle_npcs", "circle_id")):
+            if col not in _columns(conn, table):
+                conn.execute("ALTER TABLE " + table + " ADD COLUMN " + col + " TEXT NOT NULL DEFAULT ''")
+        now = now_iso()
+        for bond in conn.execute(
+            "SELECT id, persona_id, character_id, circle_id FROM bonds"
+        ).fetchall():
+            if bond["circle_id"]:
+                continue
+            ch = conn.execute(
+                "SELECT name FROM characters WHERE id = ?", (bond["character_id"],)
+            ).fetchone()
+            name = ((ch["name"] if ch else "") or "这一段") + " 的圈"
+            cid = new_id("circle")
+            conn.execute(
+                "INSERT OR IGNORE INTO circles (id, persona_id, name, note, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (cid, bond["persona_id"], name, "", now, now),
+            )
+            conn.execute("UPDATE bonds SET circle_id = ? WHERE id = ?", (cid, bond["id"]))
+            conn.execute(
+                "UPDATE posts SET circle_id = ? WHERE bond_id = ? AND circle_id = ''",
+                (cid, bond["id"]),
+            )
+            conn.execute(
+                "UPDATE circle_npcs SET circle_id = ? WHERE bond_id = ? AND circle_id = ''",
+                (cid, bond["id"]),
+            )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_circle ON posts(circle_id, at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_bonds_circle ON bonds(circle_id)")
 
 
 def init_db() -> None:
@@ -2267,13 +2332,30 @@ def delete_event(conn, event_id: str) -> bool:
 
 
 def list_posts(conn, bond_id: str, limit: int = 50) -> list[dict[str, Any]]:
-    """一段关系一个朋友圈。查的是 bond，不是角色——同一个人设换了，看到的就是另一份。"""
+    """按「圈」查，而不是按 bond。
+
+    没合并过的 bond 各自独占一个圈，所以结果和以前按 bond 查完全一样；
+    合并之后，同圈的角色就能看到彼此的动态。
+    """
     if not bond_id:
         return []
-    rows = conn.execute(
-        "SELECT * FROM posts WHERE bond_id = ? ORDER BY at DESC, created_at DESC LIMIT ?",
-        (bond_id, int(limit)),
-    ).fetchall()
+    bond = conn.execute("SELECT circle_id FROM bonds WHERE id = ?", (bond_id,)).fetchone()
+    circle_id = (bond["circle_id"] if bond else "") or ""
+    if circle_id:
+        rows = conn.execute(
+            "SELECT * FROM posts WHERE circle_id = ? ORDER BY at DESC, created_at DESC LIMIT ?",
+            (circle_id, int(limit)),
+        ).fetchall()
+        if not rows:
+            rows = conn.execute(
+                "SELECT * FROM posts WHERE bond_id = ? ORDER BY at DESC, created_at DESC LIMIT ?",
+                (bond_id, int(limit)),
+            ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM posts WHERE bond_id = ? ORDER BY at DESC, created_at DESC LIMIT ?",
+            (bond_id, int(limit)),
+        ).fetchall()
     if not rows:
         return []
     ids = [r["id"] for r in rows]
@@ -2293,6 +2375,83 @@ def list_posts(conn, bond_id: str, limit: int = 50) -> list[dict[str, Any]]:
     return [
         post_json(r, replies.get(r["id"], []), likes.get(r["id"], [])) for r in rows
     ]
+
+
+# --------------------------------------------------------------------------- circles
+def circle_json(row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "personaId": row["persona_id"] or "",
+        "name": row["name"] or "",
+        "note": row["note"] or "",
+        "createdAt": row["created_at"] or "",
+        "updatedAt": row["updated_at"] or "",
+    }
+
+
+def get_circle_row(conn, circle_id: str):
+    return conn.execute("SELECT * FROM circles WHERE id = ?", (circle_id,)).fetchone()
+
+
+def circle_for_bond(conn, bond_id: str) -> str:
+    row = conn.execute("SELECT circle_id FROM bonds WHERE id = ?", (bond_id,)).fetchone()
+    return (row["circle_id"] if row else "") or ""
+
+
+def list_circles(conn, persona_id: str = "") -> list[dict[str, Any]]:
+    """圈 + 圈里的成员（角色名）+ 动态数，供前端展示与合并选择。"""
+    if persona_id:
+        rows = conn.execute(
+            "SELECT * FROM circles WHERE persona_id = ? ORDER BY created_at ASC", (persona_id,)
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM circles ORDER BY created_at ASC").fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = circle_json(row)
+        members = conn.execute(
+            "SELECT b.id AS bond_id, b.character_id AS character_id, c.name AS name "
+            "FROM bonds b LEFT JOIN characters c ON c.id = b.character_id "
+            "WHERE b.circle_id = ? ORDER BY b.created_at ASC",
+            (row["id"],),
+        ).fetchall()
+        item["members"] = [
+            {"bondId": m["bond_id"], "characterId": m["character_id"], "name": m["name"] or ""}
+            for m in members
+        ]
+        cnt = conn.execute(
+            "SELECT COUNT(*) AS n FROM posts WHERE circle_id = ?", (row["id"],)
+        ).fetchone()
+        item["postCount"] = _int(cnt["n"] if cnt else 0, 0)
+        out.append(item)
+    return out
+
+
+def merge_circles(conn, from_id: str, into_id: str) -> dict[str, Any]:
+    """把 from 圈整个并进 into 圈，然后删掉 from。
+
+    动态、NPC、bond 三类引用一起搬，不留悬空 circle_id。
+    """
+    if not from_id or not into_id or from_id == into_id:
+        return {"ok": False, "message": "要合并的是两个不同的圈。"}
+    if not get_circle_row(conn, from_id):
+        return {"ok": False, "message": "要合并的圈不在了。"}
+    target = get_circle_row(conn, into_id)
+    if not target:
+        return {"ok": False, "message": "目标圈不在了。"}
+    posts = conn.execute("UPDATE posts SET circle_id = ? WHERE circle_id = ?", (into_id, from_id)).rowcount
+    npcs = conn.execute(
+        "UPDATE circle_npcs SET circle_id = ? WHERE circle_id = ?", (into_id, from_id)
+    ).rowcount
+    bonds = conn.execute(
+        "UPDATE bonds SET circle_id = ? WHERE circle_id = ?", (into_id, from_id)
+    ).rowcount
+    conn.execute("DELETE FROM circles WHERE id = ?", (from_id,))
+    return {
+        "ok": True,
+        "moved": {"posts": posts, "npcs": npcs, "bonds": bonds},
+        "into": circle_json(target),
+    }
 
 
 def get_post_row(conn, post_id: str):

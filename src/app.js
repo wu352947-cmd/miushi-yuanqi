@@ -4095,6 +4095,8 @@
     if (memNew) memNew.hidden = eventSeg;
     if (evNew) evNew.hidden = !eventSeg;
     if (filters) filters.hidden = eventSeg;
+    var hint = document.querySelector('.memory-hint');
+    if (hint) hint.hidden = eventSeg;
     if (eventSeg) loadEvents();
   }
 
