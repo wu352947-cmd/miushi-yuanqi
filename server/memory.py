@@ -537,6 +537,7 @@ def schedule_extract_after_reply(
     force=True 时跳过轮数门槛（离线续写用：它不产生用户轮，
     按轮数算永远轮不到它，那她说的新细节就进不了记忆库）。
     """
+    chat_id_for_events = ""
     try:
         with db.get_db() as conn:
             if not _config_value(conn, "memoryExtractEnabled", True):
@@ -555,6 +556,7 @@ def schedule_extract_after_reply(
                 return
             marks[chat["id"]] = user_turns
             db.save_app_settings(conn, config)
+            chat_id_for_events = chat["id"]
     except Exception:  # noqa: BLE001 - 只是这一轮不抽，不能影响聊天
         LOG.warning("自动记忆抽取的前置检查失败，这一轮跳过。", exc_info=True)
         return
@@ -566,6 +568,19 @@ def schedule_extract_after_reply(
             LOG.warning(
                 "后台自动记忆抽取失败（角色 %s），聊天不受影响。", character_id, exc_info=True
             )
+        # 事件抽取与记忆抽取分开跑：一个是「她这个人」，一个是「这一天发生了什么」。
+        # 任何一边失败都不该影响另一边，更不该影响聊天。
+        if chat_id_for_events:
+            try:
+                from . import events as events_mod
+
+                await events_mod.extract_events(chat_id_for_events)
+            except Exception:  # noqa: BLE001
+                LOG.warning(
+                    "后台剧情事件抽取失败（对话 %s），聊天不受影响。",
+                    chat_id_for_events,
+                    exc_info=True,
+                )
 
     try:
         asyncio.get_running_loop().create_task(_run())
