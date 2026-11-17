@@ -3538,6 +3538,7 @@
     var photoDate = document.getElementById('homePhotoDate');
     if (photoDate) photoDate.textContent = monthDay(now);
     tickHomeClock(now);
+    loadEvents();
     fetchHome();
   }
 
@@ -3992,6 +3993,215 @@
       body = '<p class="empty-note">这里还是空的。</p>';
     }
     return { title: '已遗忘', body: body };
+  };
+
+  /* ---------------- 剧情事件：这一天发生了什么 ---------------- *
+   * 和「记忆」的分工：记忆是「她这个人」（喜好、怕黑、约定），
+   * 事件是时间轴上的一格（去了哪、做了什么、关系走到哪一步）。 */
+  var eventSeg = false;
+  var eventCache = { bondId: '', items: [], loaded: false };
+
+  var EVENT_KINDS = ['日常', '关系', '秘密', '冲突', '约定'];
+  var EVENT_KIND_CLASS = { '日常': 'day', '关系': 'love', '秘密': 'secret', '冲突': 'fight', '约定': 'promise' };
+
+  function loadEvents(force) {
+    var bid = currentBondId();
+    if (!bid) {
+      eventCache = { bondId: '', items: [], loaded: true };
+      renderEvents();
+      renderHomeEvents();
+      return;
+    }
+    if (!force && eventCache.loaded && eventCache.bondId === bid) {
+      renderEvents();
+      renderHomeEvents();
+      return;
+    }
+    serverFetch('/events?bondId=' + encodeURIComponent(bid) + '&limit=200').then(function (res) {
+      if (currentBondId() !== bid) return;
+      eventCache = { bondId: bid, items: (res && res.events) || [], loaded: true };
+      renderEvents();
+      renderHomeEvents();
+    }).catch(function () {
+      eventCache.loaded = true;
+      renderEvents();
+      renderHomeEvents();
+    });
+  }
+
+  function eventById(id) {
+    var hit = null;
+    (eventCache.items || []).forEach(function (x) { if (x.id === id) hit = x; });
+    return hit;
+  }
+
+  function eventRowHtml(e) {
+    var cls = EVENT_KIND_CLASS[e.kind] || 'day';
+    return '<button class="ev-row" type="button" data-event="' + esc(e.id) + '" aria-haspopup="dialog" aria-label="事件：' + esc(e.title) + '">' +
+      '<span class="ev-row__dot"></span>' +
+      '<span class="ev-row__main">' +
+        '<span class="ev-row__title serif">' + rich(e.title) + '</span>' +
+        (e.body ? '<span class="ev-row__body">' + rich(e.body) + '</span>' : '') +
+        '<span class="ev-row__meta">' +
+          '<span class="ev-kind ev-kind--' + cls + '">' + esc(e.kind) + '</span>' +
+          (e.day ? '<span class="ev-day">' + esc(e.day) + '</span>' : '') +
+          (e.manual ? '<span class="ev-hand">手记</span>' : '') +
+        '</span>' +
+      '</span>' +
+      IC_ROW_CHEV +
+    '</button>';
+  }
+
+  function renderEvents() {
+    var list = $('#eventList');
+    if (!list) return;
+    var items = (eventCache.items || []).slice();
+    list.innerHTML = items.length
+      ? items.map(eventRowHtml).join('')
+      : '<p class="empty-note">还没有记下什么。聊着聊着她会自己记；也可以在这里补一条。</p>';
+  }
+
+  function renderHomeEvents() {
+    var box = $('#homeEventList');
+    if (!box) return;
+    var items = (eventCache.items || []).slice(0, 3);
+    box.innerHTML = items.length
+      ? items.map(function (e) {
+          return '<li class="ev-line">' +
+            '<span class="ev-line__day">' + esc(String(e.day || '').slice(5)) + '</span>' +
+            '<span class="ev-line__title">' + rich(e.title) + '</span>' +
+          '</li>';
+        }).join('')
+      : '<li class="ev-line ev-line--empty">还没有事记下来。</li>';
+  }
+
+  function setMemorySeg(toEvents) {
+    eventSeg = !!toEvents;
+    var seg = $('#memorySeg');
+    if (seg) {
+      $$('.seg__btn', seg).forEach(function (b) {
+        var on = (b.getAttribute('data-seg') === 'events') === eventSeg;
+        b.classList.toggle('is-on', on);
+        b.setAttribute('aria-selected', String(on));
+      });
+    }
+    var memList = $('#memoryList');
+    var evList = $('#eventList');
+    var memNew = document.querySelector('.memory-new[data-open="memoryNew"]');
+    var evNew = $('#eventNewBtn');
+    var filters = $('#memoryFilters');
+    if (memList) memList.hidden = eventSeg;
+    if (evList) evList.hidden = !eventSeg;
+    if (memNew) memNew.hidden = eventSeg;
+    if (evNew) evNew.hidden = !eventSeg;
+    if (filters) filters.hidden = eventSeg;
+    if (eventSeg) loadEvents();
+  }
+
+  function eventBondFields() {
+    var chat = chatOf(state.currentCharacterId);
+    var rp = resolvedPersona(chat, currentChar());
+    return {
+      bondId: currentBondId(),
+      chatId: (chat && chat.id) || '',
+      characterId: state.currentCharacterId || '',
+      personaId: (rp && rp.persona && rp.persona.id) || ''
+    };
+  }
+
+  function createEventFromSheet() {
+    var t = $('#evNewTitle');
+    var title = t ? t.value.trim() : '';
+    if (!title) { toast('写一句发生了什么。'); return; }
+    var b = $('#evNewBody');
+    var k = $('#evNewKind');
+    var im = $('#evNewImp');
+    var d = $('#evNewDay');
+    var fields = eventBondFields();
+    var body = {
+      title: title,
+      body: b ? b.value.trim() : '',
+      kind: k ? k.value : '日常',
+      importance: im ? Math.max(1, Math.min(10, +im.value || 5)) : 5,
+      day: d ? d.value.trim() : ''
+    };
+    Object.keys(fields).forEach(function (key) { body[key] = fields[key]; });
+    serverFetch('/events', { method: 'POST', body: body }).then(function () {
+      closeSheet();
+      loadEvents(true);
+      toast('记下了。');
+    }).catch(apiToast);
+  }
+
+  function saveEventEdit(id) {
+    var patch = {};
+    var t = $('#evEditTitle');
+    var b = $('#evEditBody');
+    var k = $('#evEditKind');
+    var im = $('#evEditImp');
+    if (t) patch.title = t.value.trim();
+    if (b) patch.body = b.value.trim();
+    if (k) patch.kind = k.value;
+    if (im) patch.importance = Math.max(1, Math.min(10, +im.value || 5));
+    if (patch.title === '') { toast('标题不能空着。'); return; }
+    serverFetch('/events/' + encodeURIComponent(id), { method: 'PATCH', body: patch }).then(function () {
+      closeSheet();
+      loadEvents(true);
+      toast('改好了。');
+    }).catch(apiToast);
+  }
+
+  function deleteEvent(id) {
+    serverFetch('/events/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
+      loadEvents(true);
+      toast('删掉了。');
+    }).catch(apiToast);
+  }
+
+  SHEETS.eventNew = function () {
+    return {
+      title: '记一件事',
+      body: '<label class="field-label" for="evNewTitle">发生了什么</label>' +
+        '<input class="field field--title" id="evNewTitle" type="text" placeholder="例如：傍晚一起去超市">' +
+        '<label class="field-label" for="evNewBody">细节（可选）</label>' +
+        '<textarea class="field" id="evNewBody" style="min-height:96px" placeholder="一两句就够，写清谁做了什么"></textarea>' +
+        '<label class="field-label" for="evNewKind">类型</label>' +
+        '<select class="field" id="evNewKind">' +
+          EVENT_KINDS.map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join('') +
+        '</select>' +
+        '<label class="field-label" for="evNewImp">分量（1–10）</label>' +
+        '<input class="field" id="evNewImp" type="number" inputmode="numeric" min="1" max="10" value="5">' +
+        '<label class="field-label" for="evNewDay">日期（可不填）</label>' +
+        '<input class="field" id="evNewDay" type="text" placeholder="留空就接着上一条">' +
+        '<p class="sheet-note">这里记的是「这一次发生了什么」。她的喜好、习惯、你们的约定放在「记忆」里。</p>',
+      foot: '<button class="btn" type="button" data-close>取消</button>' +
+        '<button class="btn btn--primary" type="button" data-event-save-new>记下</button>'
+    };
+  };
+
+  SHEETS.eventEdit = function (id) {
+    var e = eventById(id);
+    if (!e) return null;
+    return {
+      title: '这条事件',
+      body: '<label class="field-label" for="evEditTitle">发生了什么</label>' +
+        '<input class="field field--title" id="evEditTitle" type="text" value="' + esc(e.title) + '">' +
+        '<label class="field-label" for="evEditBody">细节</label>' +
+        '<textarea class="field" id="evEditBody" style="min-height:96px">' + esc(e.body || '') + '</textarea>' +
+        '<label class="field-label" for="evEditKind">类型</label>' +
+        '<select class="field" id="evEditKind">' +
+          EVENT_KINDS.map(function (k) {
+            return '<option value="' + esc(k) + '"' + (k === e.kind ? ' selected' : '') + '>' + esc(k) + '</option>';
+          }).join('') +
+        '</select>' +
+        '<label class="field-label" for="evEditImp">分量（1–10）</label>' +
+        '<input class="field" id="evEditImp" type="number" inputmode="numeric" min="1" max="10" value="' + esc(e.importance) + '">' +
+        '<p class="sheet-note">' + (e.day ? '记在 ' + esc(e.day) + '。' : '') +
+        (e.manual ? '这条是你手动补的。' : '这条是她聊完之后自己记下的。') + '</p>',
+      foot: '<button class="btn" type="button" data-event-del="' + esc(e.id) + '">删除</button>' +
+        '<button class="btn" type="button" data-close>取消</button>' +
+        '<button class="btn btn--primary" type="button" data-event-save="' + esc(e.id) + '">保存</button>'
+    };
   };
 
   SHEETS.memoryNew = function () {
@@ -5382,6 +5592,21 @@
     }
 
     if ((hit = target.closest('[data-action]'))) { handleAction(hit.getAttribute('data-action'), hit); return; }
+    if ((hit = target.closest('[data-events-jump]'))) { navTo('memory'); setMemorySeg(true); return; }
+    if ((hit = target.closest('[data-seg]'))) { setMemorySeg(hit.getAttribute('data-seg') === 'events'); return; }
+    if ((hit = target.closest('[data-event-save-new]'))) { createEventFromSheet(); return; }
+    if ((hit = target.closest('[data-event-save]'))) { saveEventEdit(hit.getAttribute('data-event-save')); return; }
+    if ((hit = target.closest('[data-event-del]'))) {
+      openSheet('confirm', {
+        title: '删掉这条事件？',
+        text: '只删这条记录，聊天内容一个字都不会动。',
+        label: '删除',
+        run: 'delete-event',
+        id: hit.getAttribute('data-event-del')
+      });
+      return;
+    }
+    if ((hit = target.closest('[data-event]'))) { openSheet('eventEdit', hit.getAttribute('data-event')); return; }
     if ((hit = target.closest('[data-nav]'))) { navTo(hit.getAttribute('data-nav')); return; }
     if ((hit = target.closest('[data-cap]'))) { toggleCap(hit); return; }
     if ((hit = target.closest('[data-truncate-continue]'))) {
@@ -6563,6 +6788,7 @@
 
   /* 确认弹层里的 A2 删除动作 */
   function runConfirmA2(kind, id) {
+    if (kind === 'delete-event') { deleteEvent(id); closeSheet(); return true; }
     if (kind === 'delete-provider') {
       var p = findProvider(id);
       if (!p) return true;

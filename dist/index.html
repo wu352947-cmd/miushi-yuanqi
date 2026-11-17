@@ -5505,6 +5505,43 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
 .pick-row__why { margin: 0 0 8px 25px; font-family: var(--serif); font-size: 11.5px; line-height: 1.5; color: var(--text-3); }
 .pick-row.is-current .song-row__title, .pick-row.is-current .song-row__no { color: var(--pink-deep); }
 
+/* ---------------- 剧情事件 ---------------- */
+.w--events { cursor: pointer; }
+.ev-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.ev-line { display: flex; align-items: baseline; gap: 9px; padding: 6px 0; }
+.ev-line + .ev-line { border-top: 1px dashed var(--divider); }
+.ev-line__day { flex: none; font-size: 11px; letter-spacing: .04em; color: var(--pink-deep); opacity: .72; }
+.ev-line__title { font-size: 13.5px; line-height: 1.5; color: var(--text); }
+.ev-line--empty { justify-content: center; font-size: 12px; color: var(--pink-deep); opacity: .6; }
+
+.seg { display: flex; gap: 8px; margin: 10px 0 2px; }
+.seg__btn {
+  flex: 1 1 0; padding: 8px 0; border: 1px solid var(--divider); border-radius: 999px;
+  background: transparent; color: var(--pink-deep); opacity: .72; font-size: 13px; letter-spacing: .04em;
+  font-family: inherit; cursor: pointer; transition: opacity .18s, background .18s;
+}
+.seg__btn.is-on { opacity: 1; background: rgba(211, 154, 168, .16); border-color: transparent; color: var(--text); }
+
+.ev-row {
+  display: flex; align-items: flex-start; gap: 11px; width: 100%;
+  padding: 13px 0; text-align: left; border: 0; background: transparent;
+  font-family: inherit; cursor: pointer; color: inherit;
+}
+.ev-row + .ev-row { border-top: 1px solid var(--divider); }
+.ev-row__dot {
+  flex: none; width: 7px; height: 7px; margin-top: 7px; border-radius: 50%;
+  background: var(--pink); box-shadow: 0 0 0 3px rgba(211, 154, 168, .14);
+}
+.ev-row__main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ev-row__title { font-size: 14px; line-height: 1.45; color: var(--text); }
+.ev-row__body { font-size: 12.5px; line-height: 1.55; color: var(--text); opacity: .72; }
+.ev-row__meta { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: 11px; color: var(--pink-deep); opacity: .66; }
+.ev-kind { padding: 1px 7px; border-radius: 999px; background: rgba(211, 154, 168, .14); }
+.ev-kind--love { background: rgba(211, 154, 168, .24); }
+.ev-kind--secret { background: rgba(156, 107, 122, .16); }
+.ev-kind--fight { background: rgba(196, 120, 120, .16); }
+.ev-kind--promise { background: rgba(180, 160, 110, .16); }
+.ev-hand { padding: 1px 6px; border: 1px solid var(--divider); border-radius: 999px; }
 
 /* ===== features/chat-history.css ===== */
 /* ===== 第三块：聊天记录管理（对话列表 / 最近的聊天 / 搜索 / 改名 / 人设三层 / 导入导出） ===== */
@@ -5856,6 +5893,13 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
                 <p class="mem-text" id="homeMemText">你习惯睡前喝半杯温水，杯子放在床头左手边。</p>
               </article>
 
+              <article class="w w--wide w--events" data-events-jump="1" role="button" tabindex="0" aria-label="最近发生的事">
+                <div class="w-head">
+                  <span class="label"><span class="star">✧</span> 最近 <em class="en-inline">RECENT</em></span>
+                  <span class="label label--soft">全部 ›</span>
+                </div>
+                <ul class="ev-list" id="homeEventList"><!-- 由 JS 渲染 --></ul>
+              </article>
               <article class="w w--quote">
                 <span class="label"><span class="star">✧</span> 每日一句</span>
                 <p class="quote-text serif" id="homeQuote">把日子过成两个人的，就不算浪费。</p>
@@ -6078,6 +6122,10 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
             </article>
 
             <div class="chips" id="bondChips" role="group" aria-label="记忆属于哪段关系"><!-- 由 JS 渲染 --></div>
+            <div class="seg" id="memorySeg" role="tablist" aria-label="看记忆还是看事件">
+              <button class="seg__btn is-on" type="button" data-seg="memory" role="tab" aria-selected="true">记忆</button>
+              <button class="seg__btn" type="button" data-seg="events" role="tab" aria-selected="false">事件</button>
+            </div>
             <div class="chips" id="memoryFilters" role="group" aria-label="记忆主题">
               <button class="chip-filter is-on" type="button" data-cat="全部" aria-pressed="true">
                 <svg viewBox="0 0 14 14" fill="none"><path d="M7 2.2 8 6 11.8 7 8 8 7 11.8 6 8 2.2 7 6 6z"/></svg>全部
@@ -6100,8 +6148,10 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
             </div>
 
             <div class="list-card" id="memoryList"><!-- 由 JS 渲染 --></div>
+            <div class="list-card" id="eventList" hidden><!-- 由 JS 渲染 --></div>
 
             <button class="text-btn memory-new" type="button" data-open="memoryNew">＋ 新增一条记忆</button>
+            <button class="text-btn memory-new" id="eventNewBtn" type="button" data-open="eventNew" hidden>＋ 记一件事</button>
 
             <p class="memory-hint">
               在对话里说<u>「记住这个」</u>，或者在聊天菜单里点「记住这句话」，都会按原样收进这里。<br>
@@ -15258,6 +15308,7 @@ const DATA = {
     var photoDate = document.getElementById('homePhotoDate');
     if (photoDate) photoDate.textContent = monthDay(now);
     tickHomeClock(now);
+    loadEvents();
     fetchHome();
   }
 
@@ -15712,6 +15763,215 @@ const DATA = {
       body = '<p class="empty-note">这里还是空的。</p>';
     }
     return { title: '已遗忘', body: body };
+  };
+
+  /* ---------------- 剧情事件：这一天发生了什么 ---------------- *
+   * 和「记忆」的分工：记忆是「她这个人」（喜好、怕黑、约定），
+   * 事件是时间轴上的一格（去了哪、做了什么、关系走到哪一步）。 */
+  var eventSeg = false;
+  var eventCache = { bondId: '', items: [], loaded: false };
+
+  var EVENT_KINDS = ['日常', '关系', '秘密', '冲突', '约定'];
+  var EVENT_KIND_CLASS = { '日常': 'day', '关系': 'love', '秘密': 'secret', '冲突': 'fight', '约定': 'promise' };
+
+  function loadEvents(force) {
+    var bid = currentBondId();
+    if (!bid) {
+      eventCache = { bondId: '', items: [], loaded: true };
+      renderEvents();
+      renderHomeEvents();
+      return;
+    }
+    if (!force && eventCache.loaded && eventCache.bondId === bid) {
+      renderEvents();
+      renderHomeEvents();
+      return;
+    }
+    serverFetch('/events?bondId=' + encodeURIComponent(bid) + '&limit=200').then(function (res) {
+      if (currentBondId() !== bid) return;
+      eventCache = { bondId: bid, items: (res && res.events) || [], loaded: true };
+      renderEvents();
+      renderHomeEvents();
+    }).catch(function () {
+      eventCache.loaded = true;
+      renderEvents();
+      renderHomeEvents();
+    });
+  }
+
+  function eventById(id) {
+    var hit = null;
+    (eventCache.items || []).forEach(function (x) { if (x.id === id) hit = x; });
+    return hit;
+  }
+
+  function eventRowHtml(e) {
+    var cls = EVENT_KIND_CLASS[e.kind] || 'day';
+    return '<button class="ev-row" type="button" data-event="' + esc(e.id) + '" aria-haspopup="dialog" aria-label="事件：' + esc(e.title) + '">' +
+      '<span class="ev-row__dot"></span>' +
+      '<span class="ev-row__main">' +
+        '<span class="ev-row__title serif">' + rich(e.title) + '</span>' +
+        (e.body ? '<span class="ev-row__body">' + rich(e.body) + '</span>' : '') +
+        '<span class="ev-row__meta">' +
+          '<span class="ev-kind ev-kind--' + cls + '">' + esc(e.kind) + '</span>' +
+          (e.day ? '<span class="ev-day">' + esc(e.day) + '</span>' : '') +
+          (e.manual ? '<span class="ev-hand">手记</span>' : '') +
+        '</span>' +
+      '</span>' +
+      IC_ROW_CHEV +
+    '</button>';
+  }
+
+  function renderEvents() {
+    var list = $('#eventList');
+    if (!list) return;
+    var items = (eventCache.items || []).slice();
+    list.innerHTML = items.length
+      ? items.map(eventRowHtml).join('')
+      : '<p class="empty-note">还没有记下什么。聊着聊着她会自己记；也可以在这里补一条。</p>';
+  }
+
+  function renderHomeEvents() {
+    var box = $('#homeEventList');
+    if (!box) return;
+    var items = (eventCache.items || []).slice(0, 3);
+    box.innerHTML = items.length
+      ? items.map(function (e) {
+          return '<li class="ev-line">' +
+            '<span class="ev-line__day">' + esc(String(e.day || '').slice(5)) + '</span>' +
+            '<span class="ev-line__title">' + rich(e.title) + '</span>' +
+          '</li>';
+        }).join('')
+      : '<li class="ev-line ev-line--empty">还没有事记下来。</li>';
+  }
+
+  function setMemorySeg(toEvents) {
+    eventSeg = !!toEvents;
+    var seg = $('#memorySeg');
+    if (seg) {
+      $$('.seg__btn', seg).forEach(function (b) {
+        var on = (b.getAttribute('data-seg') === 'events') === eventSeg;
+        b.classList.toggle('is-on', on);
+        b.setAttribute('aria-selected', String(on));
+      });
+    }
+    var memList = $('#memoryList');
+    var evList = $('#eventList');
+    var memNew = document.querySelector('.memory-new[data-open="memoryNew"]');
+    var evNew = $('#eventNewBtn');
+    var filters = $('#memoryFilters');
+    if (memList) memList.hidden = eventSeg;
+    if (evList) evList.hidden = !eventSeg;
+    if (memNew) memNew.hidden = eventSeg;
+    if (evNew) evNew.hidden = !eventSeg;
+    if (filters) filters.hidden = eventSeg;
+    if (eventSeg) loadEvents();
+  }
+
+  function eventBondFields() {
+    var chat = chatOf(state.currentCharacterId);
+    var rp = resolvedPersona(chat, currentChar());
+    return {
+      bondId: currentBondId(),
+      chatId: (chat && chat.id) || '',
+      characterId: state.currentCharacterId || '',
+      personaId: (rp && rp.persona && rp.persona.id) || ''
+    };
+  }
+
+  function createEventFromSheet() {
+    var t = $('#evNewTitle');
+    var title = t ? t.value.trim() : '';
+    if (!title) { toast('写一句发生了什么。'); return; }
+    var b = $('#evNewBody');
+    var k = $('#evNewKind');
+    var im = $('#evNewImp');
+    var d = $('#evNewDay');
+    var fields = eventBondFields();
+    var body = {
+      title: title,
+      body: b ? b.value.trim() : '',
+      kind: k ? k.value : '日常',
+      importance: im ? Math.max(1, Math.min(10, +im.value || 5)) : 5,
+      day: d ? d.value.trim() : ''
+    };
+    Object.keys(fields).forEach(function (key) { body[key] = fields[key]; });
+    serverFetch('/events', { method: 'POST', body: body }).then(function () {
+      closeSheet();
+      loadEvents(true);
+      toast('记下了。');
+    }).catch(apiToast);
+  }
+
+  function saveEventEdit(id) {
+    var patch = {};
+    var t = $('#evEditTitle');
+    var b = $('#evEditBody');
+    var k = $('#evEditKind');
+    var im = $('#evEditImp');
+    if (t) patch.title = t.value.trim();
+    if (b) patch.body = b.value.trim();
+    if (k) patch.kind = k.value;
+    if (im) patch.importance = Math.max(1, Math.min(10, +im.value || 5));
+    if (patch.title === '') { toast('标题不能空着。'); return; }
+    serverFetch('/events/' + encodeURIComponent(id), { method: 'PATCH', body: patch }).then(function () {
+      closeSheet();
+      loadEvents(true);
+      toast('改好了。');
+    }).catch(apiToast);
+  }
+
+  function deleteEvent(id) {
+    serverFetch('/events/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
+      loadEvents(true);
+      toast('删掉了。');
+    }).catch(apiToast);
+  }
+
+  SHEETS.eventNew = function () {
+    return {
+      title: '记一件事',
+      body: '<label class="field-label" for="evNewTitle">发生了什么</label>' +
+        '<input class="field field--title" id="evNewTitle" type="text" placeholder="例如：傍晚一起去超市">' +
+        '<label class="field-label" for="evNewBody">细节（可选）</label>' +
+        '<textarea class="field" id="evNewBody" style="min-height:96px" placeholder="一两句就够，写清谁做了什么"></textarea>' +
+        '<label class="field-label" for="evNewKind">类型</label>' +
+        '<select class="field" id="evNewKind">' +
+          EVENT_KINDS.map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + '</option>'; }).join('') +
+        '</select>' +
+        '<label class="field-label" for="evNewImp">分量（1–10）</label>' +
+        '<input class="field" id="evNewImp" type="number" inputmode="numeric" min="1" max="10" value="5">' +
+        '<label class="field-label" for="evNewDay">日期（可不填）</label>' +
+        '<input class="field" id="evNewDay" type="text" placeholder="留空就接着上一条">' +
+        '<p class="sheet-note">这里记的是「这一次发生了什么」。她的喜好、习惯、你们的约定放在「记忆」里。</p>',
+      foot: '<button class="btn" type="button" data-close>取消</button>' +
+        '<button class="btn btn--primary" type="button" data-event-save-new>记下</button>'
+    };
+  };
+
+  SHEETS.eventEdit = function (id) {
+    var e = eventById(id);
+    if (!e) return null;
+    return {
+      title: '这条事件',
+      body: '<label class="field-label" for="evEditTitle">发生了什么</label>' +
+        '<input class="field field--title" id="evEditTitle" type="text" value="' + esc(e.title) + '">' +
+        '<label class="field-label" for="evEditBody">细节</label>' +
+        '<textarea class="field" id="evEditBody" style="min-height:96px">' + esc(e.body || '') + '</textarea>' +
+        '<label class="field-label" for="evEditKind">类型</label>' +
+        '<select class="field" id="evEditKind">' +
+          EVENT_KINDS.map(function (k) {
+            return '<option value="' + esc(k) + '"' + (k === e.kind ? ' selected' : '') + '>' + esc(k) + '</option>';
+          }).join('') +
+        '</select>' +
+        '<label class="field-label" for="evEditImp">分量（1–10）</label>' +
+        '<input class="field" id="evEditImp" type="number" inputmode="numeric" min="1" max="10" value="' + esc(e.importance) + '">' +
+        '<p class="sheet-note">' + (e.day ? '记在 ' + esc(e.day) + '。' : '') +
+        (e.manual ? '这条是你手动补的。' : '这条是她聊完之后自己记下的。') + '</p>',
+      foot: '<button class="btn" type="button" data-event-del="' + esc(e.id) + '">删除</button>' +
+        '<button class="btn" type="button" data-close>取消</button>' +
+        '<button class="btn btn--primary" type="button" data-event-save="' + esc(e.id) + '">保存</button>'
+    };
   };
 
   SHEETS.memoryNew = function () {
@@ -17102,6 +17362,21 @@ const DATA = {
     }
 
     if ((hit = target.closest('[data-action]'))) { handleAction(hit.getAttribute('data-action'), hit); return; }
+    if ((hit = target.closest('[data-events-jump]'))) { navTo('memory'); setMemorySeg(true); return; }
+    if ((hit = target.closest('[data-seg]'))) { setMemorySeg(hit.getAttribute('data-seg') === 'events'); return; }
+    if ((hit = target.closest('[data-event-save-new]'))) { createEventFromSheet(); return; }
+    if ((hit = target.closest('[data-event-save]'))) { saveEventEdit(hit.getAttribute('data-event-save')); return; }
+    if ((hit = target.closest('[data-event-del]'))) {
+      openSheet('confirm', {
+        title: '删掉这条事件？',
+        text: '只删这条记录，聊天内容一个字都不会动。',
+        label: '删除',
+        run: 'delete-event',
+        id: hit.getAttribute('data-event-del')
+      });
+      return;
+    }
+    if ((hit = target.closest('[data-event]'))) { openSheet('eventEdit', hit.getAttribute('data-event')); return; }
     if ((hit = target.closest('[data-nav]'))) { navTo(hit.getAttribute('data-nav')); return; }
     if ((hit = target.closest('[data-cap]'))) { toggleCap(hit); return; }
     if ((hit = target.closest('[data-truncate-continue]'))) {
@@ -18283,6 +18558,7 @@ const DATA = {
 
   /* 确认弹层里的 A2 删除动作 */
   function runConfirmA2(kind, id) {
+    if (kind === 'delete-event') { deleteEvent(id); closeSheet(); return true; }
     if (kind === 'delete-provider') {
       var p = findProvider(id);
       if (!p) return true;

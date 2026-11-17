@@ -147,6 +147,13 @@
                 <p class="mem-text" id="homeMemText">你习惯睡前喝半杯温水，杯子放在床头左手边。</p>
               </article>
 
+              <article class="w w--wide w--events" data-events-jump="1" role="button" tabindex="0" aria-label="最近发生的事">
+                <div class="w-head">
+                  <span class="label"><span class="star">✧</span> 最近 <em class="en-inline">RECENT</em></span>
+                  <span class="label label--soft">全部 ›</span>
+                </div>
+                <ul class="ev-list" id="homeEventList"><!-- 由 JS 渲染 --></ul>
+              </article>
               <article class="w w--quote">
                 <span class="label"><span class="star">✧</span> 每日一句</span>
                 <p class="quote-text serif" id="homeQuote">把日子过成两个人的，就不算浪费。</p>
@@ -369,6 +376,10 @@
             </article>
 
             <div class="chips" id="bondChips" role="group" aria-label="记忆属于哪段关系"><!-- 由 JS 渲染 --></div>
+            <div class="seg" id="memorySeg" role="tablist" aria-label="看记忆还是看事件">
+              <button class="seg__btn is-on" type="button" data-seg="memory" role="tab" aria-selected="true">记忆</button>
+              <button class="seg__btn" type="button" data-seg="events" role="tab" aria-selected="false">事件</button>
+            </div>
             <div class="chips" id="memoryFilters" role="group" aria-label="记忆主题">
               <button class="chip-filter is-on" type="button" data-cat="全部" aria-pressed="true">
                 <svg viewBox="0 0 14 14" fill="none"><path d="M7 2.2 8 6 11.8 7 8 8 7 11.8 6 8 2.2 7 6 6z"/></svg>全部
@@ -391,8 +402,10 @@
             </div>
 
             <div class="list-card" id="memoryList"><!-- 由 JS 渲染 --></div>
+            <div class="list-card" id="eventList" hidden><!-- 由 JS 渲染 --></div>
 
             <button class="text-btn memory-new" type="button" data-open="memoryNew">＋ 新增一条记忆</button>
+            <button class="text-btn memory-new" id="eventNewBtn" type="button" data-open="eventNew" hidden>＋ 记一件事</button>
 
             <p class="memory-hint">
               在对话里说<u>「记住这个」</u>，或者在聊天菜单里点「记住这句话」，都会按原样收进这里。<br>

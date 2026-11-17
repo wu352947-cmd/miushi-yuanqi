@@ -3551,3 +3551,40 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
 .pick-row__why { margin: 0 0 8px 25px; font-family: var(--serif); font-size: 11.5px; line-height: 1.5; color: var(--text-3); }
 .pick-row.is-current .song-row__title, .pick-row.is-current .song-row__no { color: var(--pink-deep); }
 
+/* ---------------- 剧情事件 ---------------- */
+.w--events { cursor: pointer; }
+.ev-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.ev-line { display: flex; align-items: baseline; gap: 9px; padding: 6px 0; }
+.ev-line + .ev-line { border-top: 1px dashed var(--divider); }
+.ev-line__day { flex: none; font-size: 11px; letter-spacing: .04em; color: var(--pink-deep); opacity: .72; }
+.ev-line__title { font-size: 13.5px; line-height: 1.5; color: var(--text); }
+.ev-line--empty { justify-content: center; font-size: 12px; color: var(--pink-deep); opacity: .6; }
+
+.seg { display: flex; gap: 8px; margin: 10px 0 2px; }
+.seg__btn {
+  flex: 1 1 0; padding: 8px 0; border: 1px solid var(--divider); border-radius: 999px;
+  background: transparent; color: var(--pink-deep); opacity: .72; font-size: 13px; letter-spacing: .04em;
+  font-family: inherit; cursor: pointer; transition: opacity .18s, background .18s;
+}
+.seg__btn.is-on { opacity: 1; background: rgba(211, 154, 168, .16); border-color: transparent; color: var(--text); }
+
+.ev-row {
+  display: flex; align-items: flex-start; gap: 11px; width: 100%;
+  padding: 13px 0; text-align: left; border: 0; background: transparent;
+  font-family: inherit; cursor: pointer; color: inherit;
+}
+.ev-row + .ev-row { border-top: 1px solid var(--divider); }
+.ev-row__dot {
+  flex: none; width: 7px; height: 7px; margin-top: 7px; border-radius: 50%;
+  background: var(--pink); box-shadow: 0 0 0 3px rgba(211, 154, 168, .14);
+}
+.ev-row__main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ev-row__title { font-size: 14px; line-height: 1.45; color: var(--text); }
+.ev-row__body { font-size: 12.5px; line-height: 1.55; color: var(--text); opacity: .72; }
+.ev-row__meta { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: 11px; color: var(--pink-deep); opacity: .66; }
+.ev-kind { padding: 1px 7px; border-radius: 999px; background: rgba(211, 154, 168, .14); }
+.ev-kind--love { background: rgba(211, 154, 168, .24); }
+.ev-kind--secret { background: rgba(156, 107, 122, .16); }
+.ev-kind--fight { background: rgba(196, 120, 120, .16); }
+.ev-kind--promise { background: rgba(180, 160, 110, .16); }
+.ev-hand { padding: 1px 6px; border: 1px solid var(--divider); border-radius: 999px; }
