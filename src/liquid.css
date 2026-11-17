@@ -3588,3 +3588,27 @@ textarea.composer__input::-webkit-scrollbar { width: 3px; }
 .ev-kind--fight { background: rgba(196, 120, 120, .16); }
 .ev-kind--promise { background: rgba(180, 160, 110, .16); }
 .ev-hand { padding: 1px 6px; border: 1px solid var(--divider); border-radius: 999px; }
+
+/* ---------------- 世界圈 ---------------- */
+.wx-circlebar { padding: 6px 16px 2px; }
+.wx-circlebar__btn {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 8px 12px; border-radius: 999px; border: 1px solid var(--divider);
+  background: rgba(255, 255, 255, .45); font-family: inherit;
+  font-size: 12.5px; color: var(--text); cursor: pointer;
+}
+.wx-circlebar__dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--pink); }
+.wx-circlebar__name { flex: 1 1 auto; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wx-circlebar__hint { flex: none; font-size: 11px; color: var(--pink-deep); opacity: .72; }
+
+.ci-list { margin-top: 4px; }
+.ci-row { display: flex; align-items: center; gap: 10px; padding: 12px 0; }
+.ci-row + .ci-row { border-top: 1px solid var(--divider); }
+.ci-main { flex: 1 1 auto; min-width: 0; }
+.ci-name { display: block; font-size: 13.5px; color: var(--text); }
+.ci-sub { display: block; margin-top: 2px; font-size: 11.5px; color: var(--pink-deep); opacity: .7; }
+.ci-cur { flex: none; font-size: 11px; padding: 1px 8px; border-radius: 999px; background: rgba(211, 154, 168, .2); color: var(--text); }
+.ci-merge {
+  flex: none; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--divider);
+  background: transparent; color: var(--pink-deep); font-family: inherit; font-size: 12px; cursor: pointer;
+}

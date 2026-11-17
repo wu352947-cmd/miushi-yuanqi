@@ -2629,7 +2629,99 @@
 
   /* 同一条动态会同时出现在朋友圈和主页里。只重绘其中一个，
      另一个就像"点了没反应"——其实库里已经改了。 */
+  /* ---------------- 世界圈 ---------------- *
+   * 一个圈 = 一套世界观。默认每个角色各自一个圈，动态互不可见；
+   * 只有在这里手动合并之后，同圈的角色才会看到彼此的动态与 NPC。 */
+  var circlesCache = { items: [], loaded: false };
+
+  function loadCircles(force) {
+    if (!force && circlesCache.loaded) { renderCircleBar(); return Promise.resolve(circlesCache.items); }
+    return serverFetch('/circles').then(function (res) {
+      circlesCache = { items: (res && res.circles) || [], loaded: true };
+      renderCircleBar();
+      return circlesCache.items;
+    }).catch(function () {
+      circlesCache.loaded = true;
+      renderCircleBar();
+      return [];
+    });
+  }
+
+  function currentCircle() {
+    var bid = currentBondId();
+    if (!bid) return null;
+    var hit = null;
+    (circlesCache.items || []).forEach(function (c) {
+      (c.members || []).forEach(function (m) { if (m.bondId === bid) hit = c; });
+    });
+    return hit;
+  }
+
+  function circleLabel(c) {
+    if (!c) return '这个圈';
+    var names = (c.members || []).map(function (m) { return m.name; }).filter(Boolean);
+    if (names.length <= 1) return names[0] ? names[0] + ' 的圈' : '这个圈';
+    return names.join(' · ');
+  }
+
+  function renderCircleBar() {
+    var nameEl = document.getElementById('wxCircleName');
+    if (!nameEl) return;
+    var c = currentCircle();
+    nameEl.textContent = circleLabel(c);
+    var bar = document.getElementById('wxCircleBar');
+    if (bar) bar.style.display = c ? '' : 'none';
+  }
+
+  function mergeCircleIntoCurrent(fromId) {
+    var cur = currentCircle();
+    if (!cur) { toast('先进入一段关系。'); return; }
+    if (cur.id === fromId) { toast('这就是当前圈。'); return; }
+    serverFetch('/circles/merge', { method: 'POST', body: { fromId: fromId, intoId: cur.id } })
+      .then(function (res) {
+        var moved = (res && res.moved) || {};
+        closeSheet();
+        circlesCache.loaded = false;
+        loadCircles(true);
+        circleCache.loaded = false;
+        loadCircle();
+        toast('合到一起了：' + (moved.posts || 0) + ' 条动态、' + (moved.bonds || 0) + ' 段关系。');
+      })
+      .catch(apiToast);
+  }
+
+  SHEETS.circles = function () {
+    var cur = currentCircle();
+    if (!cur) {
+      return { title: '世界圈', body: '<p class="sheet-note">还没有建立关系。</p>' };
+    }
+    var others = (circlesCache.items || []).filter(function (c) { return c.id !== cur.id; });
+    var body = '<p class="sheet-note">同圈的动态互相可见。默认每个角色各自一个圈，只有你在这里合并之后才会共享。</p>';
+    body += '<div class="ci-list">';
+    body += '<div class="ci-row"><div class="ci-main"><span class="ci-name">' + esc(circleLabel(cur)) +
+      '</span><span class="ci-sub">' + (cur.members || []).length + ' 段关系 · ' + (cur.postCount || 0) +
+      ' 条动态</span></div><span class="ci-cur">当前</span></div>';
+    if (others.length) {
+      others.forEach(function (c) {
+        body += '<div class="ci-row"><div class="ci-main"><span class="ci-name">' + esc(circleLabel(c)) +
+          '</span><span class="ci-sub">' + (c.members || []).length + ' 段关系 · ' + (c.postCount || 0) +
+          ' 条动态</span></div>' +
+          '<button class="ci-merge" type="button" data-circle-merge="' + esc(c.id) + '">并进来</button></div>';
+      });
+    } else {
+      body += '<p class="sheet-note">只有这一个圈。</p>';
+    }
+    body += '</div>';
+    return {
+      title: '世界圈',
+      body: body,
+      foot: '<button class="btn" type="button" data-close>关闭</button>'
+    };
+  };
+
   function renderCircleAll() {
+    if (!circlesCache.loaded) loadCircles();
+    renderCircleBar();
     renderCircleFeed();
     if (profileTarget && document.getElementById('profilePosts')) renderProfile();
   }
@@ -5608,6 +5700,7 @@
       });
       return;
     }
+    if ((hit = target.closest('[data-circle-merge]'))) { mergeCircleIntoCurrent(hit.getAttribute('data-circle-merge')); return; }
     if ((hit = target.closest('[data-event]'))) { openSheet('eventEdit', hit.getAttribute('data-event')); return; }
     if ((hit = target.closest('[data-nav]'))) { navTo(hit.getAttribute('data-nav')); return; }
     if ((hit = target.closest('[data-cap]'))) { toggleCap(hit); return; }
