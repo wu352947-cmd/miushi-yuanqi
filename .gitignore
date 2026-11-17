@@ -45,3 +45,7 @@ dist/*.prev.html
 htmlcov/
 coverage.xml
 *.bak-*
+
+# 参考资料（含第三方禁止二传的主题与截图，不能随仓库分发）
+ref/
+effort-high.patch.yml
